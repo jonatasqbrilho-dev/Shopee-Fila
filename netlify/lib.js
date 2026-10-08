@@ -69,7 +69,7 @@ export async function coletar(){
     const nodes=d.productOfferV2.nodes.filter(n=>n.sales>=MIN_VENDAS&&Number(n.ratingStar)>=4.5);
     const {data:ja}=await sb.from("produtos").select("item_id").in("item_id",nodes.map(n=>String(n.itemId))); const vistos=new Set((ja||[]).map(x=>x.item_id));
     const novos=nodes.filter(n=>!vistos.has(String(n.itemId))).slice(0,4);
-    const linhas=(await Promise.all(novos.map(async n=>{try{const a=await avaliar(n);return{item_id:String(n.itemId),nome:n.productName,imagem:n.imageUrl,preco:Number(n.priceMin),desconto:Number(n.priceDiscountRate)||0,vendas:n.sales,avaliacao:Number(n.ratingStar),comissao:Number(n.commissionRate),link_afiliado:n.offerLink,link_produto:n.productLink,nota:a.nota,motivo:a.motivo,legenda:a.legenda,status:a.nota>=NOTA_MIN?"pendente":"descartado"};}catch(e){console.error("avaliar:",e.message);return null;}}))).filter(Boolean);
+    const linhas=(await Promise.all(novos.map(async n=>{try{const a=await avaliar(n);return{item_id:String(n.itemId),nome:n.productName,imagem:n.imageUrl,preco:Number(n.priceMin),desconto:Number(n.priceDiscountRate)||0,vendas:n.sales,avaliacao:Number(n.ratingStar),comissao:Number(n.commissionRate),link_afiliado:n.offerLink,link_produto:n.productLink,nota:a.nota,motivo:a.motivo,legenda:a.legenda,status:a.nota>=NOTA_MIN?"pendente":"descartado",atualizado_em:new Date().toISOString()};}catch(e){console.error("avaliar:",e.message);return null;}}))).filter(Boolean);
     if(linhas.length) await sb.from("produtos").upsert(linhas,{onConflict:"item_id",ignoreDuplicates:true}); return linhas.length;
   }catch(e){console.error(kw,e.message);return 0;}})); return totais.reduce((a,b)=>a+b,0);
 }

@@ -15,7 +15,7 @@ export default async (req) => {
       try {
         const d = await shopee(`{ __type(name: "ProductOfferV2") { fields { name } } }`);
         const campos = d.__type.fields.map((f) => f.name);
-        return json({ campos, video: campos.filter((c) => /video|media/i.test(c)) });
+        return json({ campos, video: campos.filter((c) => /video|media/i.test(c)), imagens: campos.filter((c) => /image|img|pic|photo/i.test(c)) });
       } catch (e) { return json({ erro: e.message }, 500); }
     }
     const { data } = await sb.from("produtos").select("*").eq("status", url.searchParams.get("status") || "pendente").order("nota", { ascending: false }).limit(100);

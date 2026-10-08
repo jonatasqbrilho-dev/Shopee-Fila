@@ -44,17 +44,19 @@ export async function avaliar(p) {
 }
 
 const limitarPrompt=texto=>{let s=String(texto||"");if(s.length<=850)return s;return s.slice(0,850).replace(/\s+\S*$/," ").trim();};
+const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,"").replace(/\b\d+[.,]\d{2}\s?(?:reais)?\b/gi,"").replace(/\b(?:por|de|a partir de)\s+\d+(?:[.,]\d{2})?\s?(?:reais|R\$)?\b/gi,"").replace(/\s{2,}/g," ").trim();
 
 export async function gerarConteudo(p) {
   const prompt=`Você é um especialista em vídeos curtos de afiliado Shopee Brasil. Crie um pacote factual para um vídeo vertical 9:16 de aproximadamente 10 segundos, pensado para ser montado manualmente no YouTube Create usando as imagens REAIS do anúncio como referência.
 REGRA ABSOLUTA: NÃO altere, redesenhe ou invente o produto. Preserve exatamente aparência, cor, formato, marca/logo, embalagem, acessórios e características visíveis nas imagens. Não invente especificações, medidas, materiais, funções, certificações, resultados ou comparações que não estejam nos dados fornecidos. Use apenas características explicitamente presentes nos dados do anúncio.
 Transforme características reais em benefícios de compra sem promessas falsas. O prompt deve pedir animações simples de câmera/texto sobre as imagens reais, sem gerar produto diferente. Evite cenas que criem acessórios ou ambientes inexistentes.
+REGRA ABSOLUTA SOBRE PREÇO: NÃO mostre, escreva, fale ou mencione qualquer preço, valor em reais, desconto, porcentagem de desconto ou promoção de preço em NENHUM elemento do vídeo. Isso vale para video_prompt, video_roteiro, video_narracao, video_textos e video_cta. Não use números que representem preço. O vídeo deve focar no produto, benefícios reais e chamada para conferir o produto na Shopee.
 IMPORTANTE: o campo video_prompt DEVE ter no máximo 850 caracteres, contando espaços. Seja direto, detalhado e aproveite bem o limite.
 Responda SOMENTE JSON neste formato: {"video_prompt":"...","video_roteiro":"...","video_narracao":"...","video_textos":["...","..."],"video_cta":"...","legenda":"...","hashtags":["#...","#..."]}.
-Hashtags: 8 a 12, específicas para o produto e intenção de compra; misture produto, categoria e descoberta. Não use hashtags aleatórias.
-Dados do anúncio: ${JSON.stringify({nome:p.nome,preco:p.preco,desconto:p.desconto,vendas:p.vendas,avaliacao:p.avaliacao,comissao:p.comissao,motivo:p.motivo,imagem:p.imagem})}`;
+Hashtags: 8 a 12, específicas para o produto e intenção de compra; misture produto, categoria e descoberta. Não use hashtags aleatórias. Não inclua preço ou desconto nas hashtags.
+Dados do anúncio: ${JSON.stringify({nome:p.nome,vendas:p.vendas,avaliacao:p.avaliacao,comissao:p.comissao,motivo:p.motivo,imagem:p.imagem})}`;
   const r=await iaJson(prompt);
-  return {video_prompt:limitarPrompt(r.video_prompt),video_roteiro:String(r.video_roteiro||""),video_narracao:String(r.video_narracao||""),video_textos:Array.isArray(r.video_textos)?r.video_textos.map(String):[],video_cta:String(r.video_cta||"Confira na Shopee"),legenda:String(r.legenda||""),hashtags:Array.isArray(r.hashtags)?r.hashtags.map(String).slice(0,12):[]};
+  return {video_prompt:limitarPrompt(removerPreco(r.video_prompt)),video_roteiro:removerPreco(r.video_roteiro),video_narracao:removerPreco(r.video_narracao),video_textos:Array.isArray(r.video_textos)?r.video_textos.map(removerPreco):[],video_cta:removerPreco(r.video_cta||"Confira na Shopee"),legenda:removerPreco(r.legenda),hashtags:Array.isArray(r.hashtags)?r.hashtags.map(String).slice(0,12):[]};
 }
 
 const KW=(process.env.KEYWORDS||"fone bluetooth,organizador de cozinha,luminária led,garrafa térmica,suporte de celular,mini processador").split(",").map(s=>s.trim());

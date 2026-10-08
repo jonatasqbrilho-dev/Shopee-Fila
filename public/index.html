@@ -21,7 +21,7 @@ nav{display:flex;gap:6px;overflow-x:auto;margin-bottom:14px}nav button{white-spa
 .full{grid-column:1/-1}textarea{width:100%;min-height:64px;font:inherit;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}.row label{display:flex;gap:4px;align-items:center}
 .vazio,#msg{color:var(--mut);text-align:center;padding:24px 8px}
-#toast{position:fixed;left:12px;right:12px;bottom:14px;max-width:696px;margin:0 auto;background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:10px;text-align:center;z-index:20;box-shadow:0 4px 18px #0004}#toast[hidden]{display:none}
+#toast{position:fixed;max-height:50vh;overflow:auto;overflow-wrap:anywhere;left:12px;right:12px;bottom:14px;max-width:696px;margin:0 auto;background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:10px;text-align:center;z-index:20;box-shadow:0 4px 18px #0004}#toast[hidden]{display:none}
 #login{max-width:320px;margin:30vh auto;display:grid;gap:10px}#login input{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
 </style></head><body><main>
 <form id="login" hidden><h1>Fila de produtos</h1><input id="senha" type="password" placeholder="Senha do painel" autocomplete="current-password"><button class="pri">Entrar</button></form>
@@ -56,7 +56,7 @@ async function carregar(){$("#abas").innerHTML=Object.entries(ABAS).map(([k,v])=
  $("#lista").innerHTML=dados.map(card).join("");$("#msg").textContent=dados.length?"":"Nada aqui. Toque em Coletar agora para buscar produtos."}
 document.addEventListener("click",async e=>{const t=e.target,ab=t.dataset.aba;if(ab){aba=ab;return carregar()}
  if(t.id==="coletar"){await fetch("/.netlify/functions/coletar-background",{method:"POST",headers:{"x-senha":senha}});return toast("Coleta iniciada. Atualize em 1 minuto.")}
- if(t.id==="campos"){const r=await api("GET",null,"?campos=1");return toast(r.erro?"Erro: "+r.erro:r.video.length?"Campos de vídeo na API: "+r.video.join(", "):"A API não tem campo de vídeo. Anexe o vídeo manualmente.")}
+ if(t.id==="campos"){const r=await api("GET",null,"?campos=1");return toast(r.erro?"Erro: "+r.erro:"Vídeo: "+(r.video.join(", ")||"nenhum campo")+" | Imagens: "+(r.imagens.join(", ")||"nenhum campo")+" | Todos os campos: "+r.campos.join(", "))}
  const el=t.closest(".card"),a=t.dataset.acao;if(!el||!a||a==="arquivo")return;const id=el.dataset.id,p=dados.find(x=>x.id===id);
  if(a==="copiar"){await navigator.clipboard.writeText(p.legenda+"\n\n"+p.link_afiliado);return toast("Legenda e link copiados.")}
  const body={id,acao:a};

@@ -4,12 +4,19 @@ const escGql=s=>String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"');
 const platformSub=(p,k)=>`${k}_${String(p.item_id).slice(-12)}`;
 
 async function gerarLinks(p){
-  const out={};
+  const out={},erros={};
+  const origin=String(p.link_produto||p.link_afiliado||"").trim();
+  if(!origin) throw new Error("Este produto não possui link da Shopee para gerar o link de afiliado.");
   for(const k of ["tiktok","youtube","instagram","telegram"]){
-    const q=`mutation { generateShortLink(input:{originUrl:"${escGql(p.link_produto||p.link_afiliado)}",subIds:["${escGql(k)}","${escGql(platformSub(p,k))}"]}) { shortLink } }`;
-    try{out[k]=(await shopee(q)).generateShortLink.shortLink;}catch(e){out[k]=null;}
+    const q=`mutation { generateShortLink(input:{originUrl:"${escGql(origin)}",subIds:["${escGql(k)}","${escGql(platformSub(p,k))}"]}) { shortLink } }`;
+    try{
+      const d=await shopee(q);
+      const link=d?.generateShortLink?.shortLink;
+      if(!link) throw new Error("A Shopee não retornou shortLink.");
+      out[k]=link;
+    }catch(e){out[k]=null;erros[k]=e?.message||String(e);}
   }
-  return out;
+  return {links:out,erros};
 }
 
 async function sincronizarConversoes(sb){
@@ -47,7 +54,18 @@ export default async(req)=>{
   }
   const b=await req.json();
   if(b.acao==="gerar_conteudo"){const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);try{const c=await gerarConteudo(p);const {error:e}=await sb.from("produtos").update({...c,video_textos:c.video_textos.join("\n"),pacote_gerado_em:new Date().toISOString(),atualizado_em:new Date().toISOString()}).eq("id",b.id);return e?json({erro:e.message},500):json({ok:true,conteudo:c});}catch(e){return json({erro:e.message},500)}}
-  if(b.acao==="gerar_links"){const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);const links=await gerarLinks(p);const {error:e}=await sb.from("produtos").update({links_plataforma:links,sub_ids:["tiktok","youtube","instagram","telegram"],atualizado_em:new Date().toISOString()}).eq("id",b.id);return e?json({erro:e.message},500):json({ok:true,links});}
+  if(b.acao==="gerar_links"){
+    const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();
+    if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);
+    try{
+      const {links,erros}=await gerarLinks(p);
+      const gerados=Object.values(links).filter(Boolean).length;
+      if(!gerados)return json({erro:"A Shopee não gerou nenhum link. Detalhes: "+JSON.stringify(erros)},502);
+      const {error:e}=await sb.from("produtos").update({links_plataforma:links,sub_ids:["tiktok","youtube","instagram","telegram"],atualizado_em:new Date().toISOString()}).eq("id",b.id);
+      if(e)return json({erro:e.message},500);
+      return json({ok:true,links,erros,gerados,aviso:Object.keys(erros).length?`Foram gerados ${gerados}/4 links. Verifique os erros das plataformas restantes.`:"4 links gerados com sucesso."});
+    }catch(e){return json({erro:e?.message||String(e)},502);}
+  }
   if(b.acao==="sincronizar_metricas"){try{return json({ok:true,...await sincronizarConversoes(sb)});}catch(e){return json({erro:e.message},500)}}
   if(b.acao==="upload_url"){const path=`${b.id}-${Date.now()}.${String(b.ext||"mp4").replace(/\W/g,"")}`,r=await sb.storage.from("videos").createSignedUploadUrl(path);if(r.error)return json({erro:r.error.message},500);return json({url:r.data.signedUrl,publico:sb.storage.from("videos").getPublicUrl(path).data.publicUrl});}
   const upd={atualizado_em:new Date().toISOString()};let aviso="";

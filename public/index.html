@@ -21,19 +21,20 @@ nav{display:flex;gap:6px;overflow-x:auto;margin-bottom:14px}nav button{white-spa
 .full{grid-column:1/-1}textarea{width:100%;min-height:64px;font:inherit;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}.row label{display:flex;gap:4px;align-items:center}
 .vazio,#msg{color:var(--mut);text-align:center;padding:24px 8px}
+#toast{position:fixed;left:12px;right:12px;bottom:14px;max-width:696px;margin:0 auto;background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:10px;text-align:center;z-index:20;box-shadow:0 4px 18px #0004}#toast[hidden]{display:none}
 #login{max-width:320px;margin:30vh auto;display:grid;gap:10px}#login input{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
 </style></head><body><main>
 <form id="login" hidden><h1>Fila de produtos</h1><input id="senha" type="password" placeholder="Senha do painel" autocomplete="current-password"><button class="pri">Entrar</button></form>
 <section id="app" hidden>
 <header><h1>Fila de produtos</h1><div class="row" style="margin:0"><button id="coletar">Coletar agora</button><button id="campos">Testar vídeo na API</button></div></header>
-<nav id="abas"></nav><div id="lista"></div><div id="msg"></div></section></main>
+<nav id="abas"></nav><div id="lista"></div><div id="msg"></div></section><div id="toast" role="status" hidden></div></main>
 <script>
 const $=s=>document.querySelector(s),ABAS={pendente:"Pendentes",aprovado:"Aprovados",publicado:"Publicados",sem_video:"Sem vídeo",rejeitado:"Rejeitados",descartado:"Descartados pela IA"};
 const PLAT={tiktok:"TikTok",youtube:"YouTube",instagram:"Instagram"};
 let senha=localStorage.senha||"",aba="pendente";
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const brl=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const toast=t=>{$("#msg").textContent=t};
+const toast=t=>{const e=$("#toast");e.textContent=t;e.hidden=false;clearTimeout(window._t);window._t=setTimeout(()=>e.hidden=true,6000)};
 async function api(m,body,q=""){const r=await fetch("/.netlify/functions/fila"+q,{method:m,headers:{"x-senha":senha,"content-type":"application/json"},body:body&&JSON.stringify(body)});
  if(r.status===401){localStorage.removeItem("senha");mostrar();throw 0}return r.json()}
 function mostrar(){const ok=!!localStorage.senha;$("#login").hidden=ok;$("#app").hidden=!ok;if(ok)carregar()}
@@ -51,8 +52,8 @@ function card(p){const pend=aba==="pendente",apr=aba==="aprovado",cls=p.nota>=85
  </div></article>`}
 let dados=[];
 async function carregar(){$("#abas").innerHTML=Object.entries(ABAS).map(([k,v])=>`<button data-aba="${k}" class="${k===aba?"on":""}">${v}</button>`).join("");
- toast("Carregando…");$("#lista").innerHTML="";dados=await api("GET",null,"?status="+aba);
- $("#lista").innerHTML=dados.map(card).join("");toast(dados.length?"":"Nada aqui. Toque em Coletar agora para buscar produtos.")}
+ $("#msg").textContent="Carregando…";$("#lista").innerHTML="";dados=await api("GET",null,"?status="+aba);
+ $("#lista").innerHTML=dados.map(card).join("");$("#msg").textContent=dados.length?"":"Nada aqui. Toque em Coletar agora para buscar produtos."}
 document.addEventListener("click",async e=>{const t=e.target,ab=t.dataset.aba;if(ab){aba=ab;return carregar()}
  if(t.id==="coletar"){await fetch("/.netlify/functions/coletar-background",{method:"POST",headers:{"x-senha":senha}});return toast("Coleta iniciada. Atualize em 1 minuto.")}
  if(t.id==="campos"){const r=await api("GET",null,"?campos=1");return toast(r.erro?"Erro: "+r.erro:r.video.length?"Campos de vídeo na API: "+r.video.join(", "):"A API não tem campo de vídeo. Anexe o vídeo manualmente.")}

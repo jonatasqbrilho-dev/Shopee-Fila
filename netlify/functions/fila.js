@@ -1,14 +1,5 @@
 import { db, json, autorizado, shopee } from "../lib.js";
 
-async function telegram(p, legenda, video) {
-  const caption = `${legenda}\n\n🛒 ${p.link_afiliado}`.slice(0, 1024);
-  const r = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendVideo`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, video, caption }),
-  });
-  return (await r.json()).ok === true;
-}
-
 export default async (req) => {
   const sb = db(), url = new URL(req.url);
 
@@ -40,18 +31,12 @@ export default async (req) => {
   }
 
   const upd = { atualizado_em: new Date().toISOString() };
-  let aviso = "";
+  const aviso = "";
   if (b.acao === "rejeitar") upd.status = "rejeitado";
   else if (b.acao === "sem_video") upd.status = "sem_video";
   else if (b.acao === "publicado") upd.status = "publicado";
   else if (b.acao === "aprovar") {
     Object.assign(upd, { status: "aprovado", legenda: b.legenda, plataformas: b.plataformas || [], video_url: b.video_url });
-    if (upd.plataformas.includes("telegram") && b.video_url) {
-      const { data: p } = await sb.from("produtos").select("link_afiliado").eq("id", b.id).single();
-      upd.telegram_ok = await telegram(p, b.legenda, b.video_url);
-      aviso = upd.telegram_ok ? "Enviado ao Telegram." : "Falha ao enviar ao Telegram (vídeo até 20 MB e chaves corretas?).";
-      if (upd.telegram_ok && upd.plataformas.every((x) => x === "telegram")) upd.status = "publicado";
-    }
   } else return json({ erro: "Ação inválida" }, 400);
 
   const { error } = await sb.from("produtos").update(upd).eq("id", b.id);

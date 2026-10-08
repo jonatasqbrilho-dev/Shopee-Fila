@@ -44,10 +44,22 @@ export default async(req)=>{
   if(req.method==="GET"){
     if(url.searchParams.get("campos")){try{const d=await shopee(`{ __type(name: "ProductOfferV2") { fields { name } } }`),campos=d.__type.fields.map(f=>f.name);return json({campos,video:campos.filter(c=>/video|media/i.test(c)),imagens:campos.filter(c=>/image|img|pic|photo/i.test(c))});}catch(e){return json({erro:e.message},500)}}
     if(url.searchParams.get("resumo")){const {data,error}=await sb.from("produtos").select("status,pedidos,itens_vendidos,valor_pedidos,comissao_estimada,comissao_validada,cliques_convertidos");if(error)return json({erro:error.message},500);const r=(data||[]).reduce((a,p)=>{a.produtos++;a.pedidos+=Number(p.pedidos||0);a.itens+=Number(p.itens_vendidos||0);a.vendas+=Number(p.valor_pedidos||0);a.estimada+=Number(p.comissao_estimada||0);a.validada+=Number(p.comissao_validada||0);a.cliques+=Number(p.cliques_convertidos||0);a.status[p.status]=(a.status[p.status]||0)+1;return a},{produtos:0,pedidos:0,itens:0,vendas:0,estimada:0,validada:0,cliques:0,status:{}});return json(r)}
-    const {data,error}=await sb.from("produtos").select("*").eq("status",url.searchParams.get("status")||"pendente").order("nota",{ascending:false}).limit(100);return error?json({erro:error.message},500):json(data||[]);
+    const {data,error}=await sb.from("produtos").select("*").eq("status",url.searchParams.get("status")||"pendente").order("nota",{ascending:false}).limit(100);
+    if(error)return json({erro:error.message},500);
+    // O projeto agora trabalha somente com o prompt. Campos antigos de roteiro/narração/textos/CTA/hashtags não devem aparecer no painel.
+    const limpos=(data||[]).map(p=>({...p,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[]}));
+    return json(limpos);
   }
   const b=await req.json();
-  if(b.acao==="gerar_conteudo"){const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);try{const c=await gerarConteudo(p);const {error:e}=await sb.from("produtos").update({...c,video_textos:c.video_textos.join("\n"),pacote_gerado_em:new Date().toISOString(),atualizado_em:new Date().toISOString()}).eq("id",b.id);return e?json({erro:e.message},500):json({ok:true,conteudo:c});}catch(e){return json({erro:e.message},500)}}
+  if(b.acao==="gerar_conteudo"){
+    const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();
+    if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);
+    try{
+      const c=await gerarConteudo(p);
+      const {error:e}=await sb.from("produtos").update({video_prompt:c.video_prompt,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[],pacote_gerado_em:new Date().toISOString(),atualizado_em:new Date().toISOString()}).eq("id",b.id);
+      return e?json({erro:e.message},500):json({ok:true,conteudo:c});
+    }catch(e){return json({erro:e.message},500)}
+  }
   if(b.acao==="gerar_links"){const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);const r=await gerarLinks(p);const links=r.out;const subs=["tiktok","youtube","instagram","telegram"].map(k=>platformSub(p,k));const {error:e}=await sb.from("produtos").update({links_plataforma:links,sub_ids:subs,atualizado_em:new Date().toISOString()}).eq("id",b.id);if(e)return json({erro:e.message},500);const gerados=Object.values(links).filter(Boolean).length;return gerados?json({ok:true,links,gerados,total:4}):json({erro:"Shopee não gerou nenhum link.",detalhes:r.erros},400);}
   if(b.acao==="sincronizar_metricas"){try{return json({ok:true,...await sincronizarConversoes(sb)});}catch(e){return json({erro:e.message},500)}}
   if(b.acao==="upload_url"){const path=`${b.id}-${Date.now()}.${String(b.ext||"mp4").replace(/\W/g,"")}`,r=await sb.storage.from("videos").createSignedUploadUrl(path);if(r.error)return json({erro:r.error.message},500);return json({url:r.data.signedUrl,publico:sb.storage.from("videos").getPublicUrl(path).data.publicUrl});}

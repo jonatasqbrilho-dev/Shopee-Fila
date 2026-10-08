@@ -43,15 +43,18 @@ export async function avaliar(p) {
   const r=await iaJson(prompt); const nota=Math.round(Number(r.nota)); if(!Number.isFinite(nota)) throw new Error("IA sem nota válida"); return {...r,nota:Math.min(100,Math.max(0,nota))};
 }
 
+const limitarPrompt=texto=>{let s=String(texto||"");if(s.length<=850)return s;return s.slice(0,850).replace(/\s+\S*$/," ").trim();};
+
 export async function gerarConteudo(p) {
   const prompt=`Você é um especialista em vídeos curtos de afiliado Shopee Brasil. Crie um pacote factual para um vídeo vertical 9:16 de aproximadamente 10 segundos, pensado para ser montado manualmente no YouTube Create usando as imagens REAIS do anúncio como referência.
 REGRA ABSOLUTA: NÃO altere, redesenhe ou invente o produto. Preserve exatamente aparência, cor, formato, marca/logo, embalagem, acessórios e características visíveis nas imagens. Não invente especificações, medidas, materiais, funções, certificações, resultados ou comparações que não estejam nos dados fornecidos. Use apenas características explicitamente presentes nos dados do anúncio.
 Transforme características reais em benefícios de compra sem promessas falsas. O prompt deve pedir animações simples de câmera/texto sobre as imagens reais, sem gerar produto diferente. Evite cenas que criem acessórios ou ambientes inexistentes.
+IMPORTANTE: o campo video_prompt DEVE ter no máximo 850 caracteres, contando espaços. Seja direto, detalhado e aproveite bem o limite.
 Responda SOMENTE JSON neste formato: {"video_prompt":"...","video_roteiro":"...","video_narracao":"...","video_textos":["...","..."],"video_cta":"...","legenda":"...","hashtags":["#...","#..."]}.
 Hashtags: 8 a 12, específicas para o produto e intenção de compra; misture produto, categoria e descoberta. Não use hashtags aleatórias.
 Dados do anúncio: ${JSON.stringify({nome:p.nome,preco:p.preco,desconto:p.desconto,vendas:p.vendas,avaliacao:p.avaliacao,comissao:p.comissao,motivo:p.motivo,imagem:p.imagem})}`;
   const r=await iaJson(prompt);
-  return {video_prompt:String(r.video_prompt||""),video_roteiro:String(r.video_roteiro||""),video_narracao:String(r.video_narracao||""),video_textos:Array.isArray(r.video_textos)?r.video_textos.map(String):[],video_cta:String(r.video_cta||"Confira na Shopee"),legenda:String(r.legenda||""),hashtags:Array.isArray(r.hashtags)?r.hashtags.map(String).slice(0,12):[]};
+  return {video_prompt:limitarPrompt(r.video_prompt),video_roteiro:String(r.video_roteiro||""),video_narracao:String(r.video_narracao||""),video_textos:Array.isArray(r.video_textos)?r.video_textos.map(String):[],video_cta:String(r.video_cta||"Confira na Shopee"),legenda:String(r.legenda||""),hashtags:Array.isArray(r.hashtags)?r.hashtags.map(String).slice(0,12):[]};
 }
 
 const KW=(process.env.KEYWORDS||"fone bluetooth,organizador de cozinha,luminária led,garrafa térmica,suporte de celular,mini processador").split(",").map(s=>s.trim());

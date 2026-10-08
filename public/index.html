@@ -29,7 +29,7 @@ nav{display:flex;gap:6px;overflow-x:auto;margin-bottom:14px}nav button{white-spa
 <nav id="abas"></nav><div id="lista"></div><div id="msg"></div></section></main>
 <script>
 const $=s=>document.querySelector(s),ABAS={pendente:"Pendentes",aprovado:"Aprovados",publicado:"Publicados",sem_video:"Sem vídeo",rejeitado:"Rejeitados",descartado:"Descartados pela IA"};
-const PLAT={telegram:"Telegram",tiktok:"TikTok",youtube:"YouTube",instagram:"Instagram"};
+const PLAT={tiktok:"TikTok",youtube:"YouTube",instagram:"Instagram"};
 let senha=localStorage.senha||"",aba="pendente";
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const brl=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -46,7 +46,7 @@ function card(p){const pend=aba==="pendente",apr=aba==="aprovado",cls=p.nota>=85
  <div class="row"><a class="btn" target="_blank" rel="noopener" href="${esc(p.link_produto||p.link_afiliado)}">Abrir na Shopee</a>
  ${pend?`<label class="btn">Anexar vídeo<input type="file" accept="video/*" hidden data-acao="arquivo"></label><span class="meta" data-st>Nenhum vídeo anexado</span>`:""}
  ${apr&&p.video_url?`<a class="btn" href="${esc(p.video_url)}" download target="_blank">Baixar vídeo</a><button data-acao="copiar">Copiar legenda + link</button><button class="ok" data-acao="publicado">Marcar como publicado</button>`:""}</div>
- ${pend?`<div class="row">${Object.entries(PLAT).map(([k,v])=>`<label><input type="checkbox" value="${k}" ${k==="telegram"?"checked":""}>${v}</label>`).join("")}</div>
+ ${pend?`<div class="row">${Object.entries(PLAT).map(([k,v])=>`<label><input type="checkbox" value="${k}" >${v}</label>`).join("")}</div>
  <div class="row"><button class="ok" data-acao="aprovar">Aprovar</button><button data-acao="rejeitar">Rejeitar</button><button data-acao="sem_video">Sem vídeo</button></div>`:""}
  </div></article>`}
 let dados=[];

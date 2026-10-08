@@ -27,19 +27,23 @@ async function groq(prompt) {
     headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: "llama-3.3-70b-versatile", response_format: { type: "json_object" }, messages: [{ role: "user", content: prompt }] }),
   });
-  return JSON.parse((await r.json()).choices[0].message.content);
+  const j = await r.json();
+  if (!j.choices) throw new Error("Groq: " + JSON.stringify(j).slice(0, 200));
+  return JSON.parse(j.choices[0].message.content);
 }
 async function gemini(prompt) {
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
   });
-  return JSON.parse((await r.json()).candidates[0].content.parts[0].text);
+  const j = await r.json();
+  if (!j.candidates) throw new Error("Gemini: " + JSON.stringify(j).slice(0, 200));
+  return JSON.parse(j.candidates[0].content.parts[0].text);
 }
 async function avaliar(p) {
   const prompt = `Você avalia produtos da Shopee Brasil para divulgação como afiliado em vídeos curtos. Responda SÓ JSON: {"nota": inteiro 0-100, "motivo": "uma frase", "legenda": "legenda curta de venda com emojis, sem preço e sem aviso de preço sujeito a alteração"}. Critérios: procura (vendas), compra por impulso, faixa de preço, desconto, avaliação, comissão e se o produto rende bom vídeo.\nProduto: ${JSON.stringify(p)}`;
   for (const chamar of [groq, gemini]) {
-    try { const r = await chamar(prompt); if (typeof r.nota === "number") return r; } catch {}
+    try { const r = await chamar(prompt); const nota = Math.round(Number(r.nota)); if (Number.isFinite(nota)) return { ...r, nota: Math.min(100, Math.max(0, nota)) }; console.error("IA sem nota válida:", JSON.stringify(r).slice(0, 200)); } catch (e) { console.error("IA falhou:", e.message); }
   }
   throw new Error("IA indisponível");
 }
@@ -70,7 +74,7 @@ export async function coletar() {
             nota: a.nota, motivo: a.motivo, legenda: a.legenda,
             status: a.nota >= NOTA_MIN ? "pendente" : "descartado",
           };
-        } catch { return null; }
+        } catch (e) { console.error("avaliar:", e.message); return null; }
       }))).filter(Boolean);
       if (linhas.length) await sb.from("produtos").upsert(linhas, { onConflict: "item_id", ignoreDuplicates: true });
       return linhas.length;

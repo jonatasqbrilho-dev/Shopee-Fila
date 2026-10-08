@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Achados da Shopee</title>
+<style>
+:root{--bg:#F4F2EE;--ink:#1B1B19;--card:#fff;--acc:#EE4D2D}@media(prefers-color-scheme:dark){:root{--bg:#121211;--ink:#EDEDEA;--card:#1D1D1B}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,sans-serif}main{max-width:520px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:22px;text-align:center;margin:8px 0 18px}a.item{display:flex;gap:12px;align-items:center;background:var(--card);border-radius:12px;padding:10px;margin-bottom:10px;color:inherit;text-decoration:none}
+a.item img{width:64px;height:64px;border-radius:8px;object-fit:cover}a.item span{flex:1;font-weight:600}a.item b{color:var(--acc)}a:focus-visible{outline:2px solid var(--acc)}
+</style></head><body><main><h1>Achados da Shopee</h1><div id="l">Carregando…</div>
+<script>
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+fetch("/.netlify/functions/fila?publico=1").then(r=>r.json()).then(d=>{document.getElementById("l").innerHTML=d.length?d.map(p=>`<a class="item" href="${esc(p.link_afiliado)}" target="_blank" rel="noopener sponsored"><img src="${esc(p.imagem)}" alt=""><span>${esc(p.nome)}</span><b>Ver</b></a>`).join(""):"Nenhum produto ainda."});
+</script></main></body></html>

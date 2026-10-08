@@ -21,24 +21,60 @@ export async function shopee(query) {
 }
 
 // ---------- IA: nota de 0 a 100 (Groq, com Gemini de reserva) ----------
+// Os modelos mudam com o tempo, então o código descobre um modelo ativo pela própria API.
+// Para fixar um modelo, defina GROQ_MODEL ou GEMINI_MODEL no Netlify.
+const lerJson = (t) => JSON.parse(t.replace(/<think>[\s\S]*?<\/think>/g, "").match(/\{[\s\S]*\}/)[0]);
+let pGroq, pGemini;
+
+const modeloGroq = () => (pGroq ??= (async () => {
+  if (process.env.GROQ_MODEL) return process.env.GROQ_MODEL;
+  const r = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` } });
+  const j = await r.json();
+  if (!j.data) throw new Error("Groq modelos: " + JSON.stringify(j).slice(0, 200));
+  const ids = j.data.map((m) => m.id).filter((id) => !/whisper|tts|guard|embed|compound|orpheus/i.test(id));
+  const pref = [/llama-3\.3-70b/, /gpt-oss-120b/, /llama-4|maverick|scout/, /gpt-oss-20b/, /llama/];
+  const m = pref.map((re) => ids.find((id) => re.test(id))).find(Boolean) || ids[0];
+  console.log("Groq usando modelo:", m);
+  return m;
+})());
+
 async function groq(prompt) {
-  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "llama-3.3-70b-versatile", response_format: { type: "json_object" }, messages: [{ role: "user", content: prompt }] }),
-  });
-  const j = await r.json();
-  if (!j.choices) throw new Error("Groq: " + JSON.stringify(j).slice(0, 200));
-  return JSON.parse(j.choices[0].message.content);
+  try {
+    const model = await modeloGroq();
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }] }),
+    });
+    const j = await r.json();
+    if (!j.choices) throw new Error("Groq: " + JSON.stringify(j).slice(0, 200));
+    return lerJson(j.choices[0].message.content);
+  } catch (e) { pGroq = undefined; throw e; }
 }
-async function gemini(prompt) {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
-  });
+
+const modeloGemini = () => (pGemini ??= (async () => {
+  if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${process.env.GEMINI_API_KEY}`);
   const j = await r.json();
-  if (!j.candidates) throw new Error("Gemini: " + JSON.stringify(j).slice(0, 200));
-  return JSON.parse(j.candidates[0].content.parts[0].text);
+  if (!j.models) throw new Error("Gemini modelos: " + JSON.stringify(j).slice(0, 200));
+  const nomes = j.models.filter((m) => (m.supportedGenerationMethods || []).includes("generateContent")).map((m) => m.name.replace("models/", ""));
+  const flash = nomes.filter((n) => /^gemini-\d+(\.\d+)?-flash$/.test(n)).sort((a, b) => parseFloat(b.split("-")[1]) - parseFloat(a.split("-")[1]));
+  const m = flash[0] || nomes.find((n) => /flash/.test(n) && !/image|tts|live|embed/.test(n)) || nomes[0];
+  console.log("Gemini usando modelo:", m);
+  return m;
+})());
+
+async function gemini(prompt) {
+  try {
+    const model = await modeloGemini();
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
+    });
+    const j = await r.json();
+    if (!j.candidates) throw new Error("Gemini: " + JSON.stringify(j).slice(0, 200));
+    return lerJson(j.candidates[0].content.parts[0].text);
+  } catch (e) { pGemini = undefined; throw e; }
 }
 async function avaliar(p) {
   const prompt = `Você avalia produtos da Shopee Brasil para divulgação como afiliado em vídeos curtos. Responda SÓ JSON: {"nota": inteiro 0-100, "motivo": "uma frase", "legenda": "legenda curta de venda com emojis, sem preço e sem aviso de preço sujeito a alteração"}. Critérios: procura (vendas), compra por impulso, faixa de preço, desconto, avaliação, comissão e se o produto rende bom vídeo.\nProduto: ${JSON.stringify(p)}`;

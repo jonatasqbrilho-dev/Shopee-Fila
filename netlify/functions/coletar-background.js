@@ -7,22 +7,23 @@ export default async (req) => {
   if (!autorizado(req)) return new Response("negado", { status: 401 });
 
   const inicio = new Date().toISOString();
-  await store.setJSON("atual", { status: "running", inicio, fim: null, adicionados: 0, erro: null, detalhes: [] });
+  await store.setJSON("atual", { status: "running", inicio, fim: null, adicionados: 0, atualizados: 0, erro: null, detalhes: [] });
 
   try {
     const resultado = await coletar();
     const erro = resultado?.erro || null;
     await store.setJSON("atual", {
-      status: erro && !resultado?.total ? "error" : "done",
+      status: erro && !resultado?.total && !resultado?.atualizadosTotal ? "error" : "done",
       inicio,
       fim: new Date().toISOString(),
       adicionados: Number(resultado?.total || 0),
+      atualizados: Number(resultado?.atualizadosTotal || 0),
       erro,
       detalhes: resultado?.detalhes || []
     });
   } catch (e) {
     const erro = e instanceof Error ? e.message : String(e);
-    await store.setJSON("atual", { status: "error", inicio, fim: new Date().toISOString(), adicionados: 0, erro: erro.slice(0, 1000), detalhes: [] });
+    await store.setJSON("atual", { status: "error", inicio, fim: new Date().toISOString(), adicionados: 0, atualizados: 0, erro: erro.slice(0, 1000), detalhes: [] });
   }
 };
 

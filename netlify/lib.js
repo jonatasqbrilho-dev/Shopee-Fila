@@ -45,30 +45,31 @@ const limitarPrompt=texto=>{let s=String(texto||"");if(s.length<=850)return s;re
 const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,"").replace(/\b\d+[.,]\d{2}\s?(?:reais)?\b/gi,"").replace(/\b(?:por|de|a partir de)\s+\d+(?:[.,]\d{2})?\s?(?:reais|R\$)?\b/gi,"").replace(/\s{2,}/g," ").trim();
 
 export async function gerarConteudo(p) {
-  const prompt=`Você é um especialista em criação de PROMPTS de alta conversão para vídeos de produtos da Shopee Brasil. Sua tarefa é gerar UM único prompt pronto para uma IA de vídeo. O objetivo é aumentar atenção, retenção, desejo e intenção de compra, sem inventar informações.
+  const prompt=`Você é um especialista em criação de PROMPTS para vídeos de produtos da Shopee Brasil. Sua tarefa é gerar UM único prompt de direção para uma IA de vídeo. O objetivo é aumentar atenção, retenção, desejo e intenção de compra, sem inventar informações.
 
-FORMATO: vídeo vertical 9:16, 20 a 30 segundos, ritmo rápido e profissional, usando prioritariamente as IMAGENS REAIS do anúncio como referência.
+REGRAS DE FORMATO: vídeo vertical 9:16, duração entre 20 e 30 segundos, preferencialmente cerca de 25 segundos, ritmo dinâmico e profissional, usando prioritariamente as IMAGENS REAIS do anúncio como referência do produto.
 
-ESTRUTURA DE CONVERSÃO OBRIGATÓRIA:
-1) Comece nos primeiros 1-2 segundos com um gancho visual forte mostrando o produto em destaque e, se possível, seu principal benefício REAL.
-2) Apresente rapidamente o produto e o problema/necessidade que ele atende, somente quando isso puder ser inferido com segurança pelos dados ou imagens.
-3) Mostre 2 ou 3 benefícios ou usos reais e comprovados, preferindo demonstrações visuais do próprio produto em vez de texto genérico.
-4) Use close-ups, movimentos de câmera, cortes rápidos, enquadramentos variados e iluminação atraente para valorizar o produto sem alterá-lo.
-5) Crie sensação de desejo e praticidade, mas sem promessas exageradas, medo artificial, escassez falsa ou afirmações não comprovadas.
-6) Termine com uma CTA visual curta e natural incentivando a pessoa a conferir o produto na Shopee/abrir o produto pelo botão ou link disponível.
-7) O vídeo deve manter o produto como protagonista do início ao fim e evitar distrações.
+IMPORTANTE: NÃO crie roteiro por segundos, não divida o vídeo em intervalos como 0-3s, 3-7s etc. NÃO determine uma sequência obrigatória de cenas. NÃO diga à IA exatamente o que fazer em cada segundo. O prompt deve apenas fornecer as regras, objetivos, características do produto e restrições. A IA DE VÍDEO deve decidir autonomamente as cenas, enquadramentos, movimentos de câmera, transições, cortes, timing e forma de apresentar o produto.
 
-REGRAS ABSOLUTAS DE FIDELIDADE:
-- Apresente EXATAMENTE o produto vinculado ao anúncio. Nunca troque por produto parecido, modelo diferente, marca diferente, cor, tamanho, capacidade, voltagem ou variação diferente.
-- Preserve fielmente aparência, formato, cor, marca/logo, embalagem, quantidade, acessórios, materiais e acabamento visíveis nas imagens reais.
+DIREÇÃO CRIATIVA: crie um vídeo atraente e com potencial de conversão, mantendo o produto como protagonista. Valorize visualmente o produto, destaque seus benefícios e usos reais quando comprovados, gere desejo e sensação de praticidade e mantenha ritmo adequado para conteúdo curto. A IA de vídeo pode escolher livremente a melhor composição visual e narrativa, desde que respeite todas as regras abaixo.
+
+FIDELIDADE ABSOLUTA AO PRODUTO:
+- Apresente EXATAMENTE o produto vinculado ao anúncio.
+- Use as imagens reais do anúncio como principal referência visual.
+- Preserve fielmente aparência, formato, cor, marca/logo, modelo, tamanho, capacidade, voltagem, embalagem, quantidade, acessórios, materiais e acabamento visíveis ou informados no anúncio.
+- Não substitua por produto parecido, modelo diferente, marca diferente ou outra variação.
 - Não invente funções, especificações, medidas, materiais, resultados, certificações, compatibilidades, acessórios ou benefícios.
-- Não adicione produtos concorrentes ou objetos que possam ser confundidos com itens vendidos no anúncio.
-- Se for kit/conjunto, mostre somente a composição indicada no anúncio.
-- Textos na tela devem ser mínimos, legíveis e baseados apenas em características comprovadas.
+- Não altere o design, formato, cor ou características do produto para deixá-lo mais bonito.
+- Não adicione produtos concorrentes ou itens que possam ser confundidos com produtos vendidos no anúncio.
+- Se for kit ou conjunto, respeite exatamente a composição indicada.
 
-REGRA ABSOLUTA SOBRE PREÇO: NÃO mostre, escreva, fale ou mencione preço, valor em reais, desconto, porcentagem de desconto ou promoção de preço.
+TEXTO E PROMESSAS: qualquer texto na tela deve ser mínimo, legível e baseado somente em informações comprovadas. Não faça promessas exageradas, resultados garantidos, escassez falsa ou afirmações não comprovadas.
 
-Não gere roteiro, narração separada, legenda, hashtags ou explicações. Gere SOMENTE JSON válido no formato {"video_prompt":"..."}. O texto de video_prompt deve ter no máximo 850 caracteres, contando espaços. Escreva em português brasileiro.\n\nDados reais do produto: ${JSON.stringify({nome:p.nome,vendas:p.vendas,avaliacao:p.avaliacao,motivo:p.motivo,imagem:p.imagem})}`;
+PREÇO: NÃO mostrar, escrever, falar ou mencionar preço, valor em reais, desconto, porcentagem de desconto ou promoção de preço.
+
+O resultado deve ser adequado para Shopee Video, com foco no produto real e em seus benefícios comprovados. Não gere roteiro, storyboard, narração, legenda, hashtags ou explicações. Gere SOMENTE JSON válido no formato {"video_prompt":"..."}. O campo video_prompt deve ter no máximo 850 caracteres, contando espaços. Escreva em português brasileiro.
+
+Dados reais do produto: ${JSON.stringify({nome:p.nome,vendas:p.vendas,avaliacao:p.avaliacao,motivo:p.motivo,imagem:p.imagem})}`;
   const r=await iaJson(prompt);
   const texto=typeof r === "string" ? r : (r.video_prompt || r.prompt || "");
   const video_prompt=limitarPrompt(removerPreco(texto));

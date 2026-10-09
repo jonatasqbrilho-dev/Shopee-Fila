@@ -63,13 +63,41 @@ const KW=(process.env.KEYWORDS||"fone bluetooth,organizador de cozinha,luminári
 const NOTA_MIN=Number(process.env.NOTA_MIN||70),MIN_VENDAS=Number(process.env.MIN_VENDAS||100);
 const CAMPOS="itemId productName imageUrl priceMin priceMax priceDiscountRate sales ratingStar commissionRate productLink offerLink shopName";
 export async function coletar(){
-  const sb=db(),kws=[...KW].sort(()=>Math.random()-0.5).slice(0,3);
-  const totais=await Promise.all(kws.map(async kw=>{try{
-    const d=await shopee(`{ productOfferV2(keyword: ${JSON.stringify(kw)}, sortType: 2, page: 1, limit: 12) { nodes { ${CAMPOS} } } }`);
-    const nodes=d.productOfferV2.nodes.filter(n=>n.sales>=MIN_VENDAS&&Number(n.ratingStar)>=4.5);
-    const {data:ja}=await sb.from("produtos").select("item_id").in("item_id",nodes.map(n=>String(n.itemId))); const vistos=new Set((ja||[]).map(x=>x.item_id));
-    const novos=nodes.filter(n=>!vistos.has(String(n.itemId))).slice(0,4);
-    const linhas=(await Promise.all(novos.map(async n=>{try{const a=await avaliar(n);return{item_id:String(n.itemId),nome:n.productName,imagem:n.imageUrl,preco:Number(n.priceMin),desconto:Number(n.priceDiscountRate)||0,vendas:n.sales,avaliacao:Number(n.ratingStar),comissao:Number(n.commissionRate),link_afiliado:n.offerLink,link_produto:n.productLink,nota:a.nota,motivo:a.motivo,legenda:a.legenda,status:a.nota>=NOTA_MIN?"pendente":"descartado",atualizado_em:new Date().toISOString()};}catch(e){console.error("avaliar:",e.message);return null;}}))).filter(Boolean);
-    if(linhas.length) await sb.from("produtos").upsert(linhas,{onConflict:"item_id",ignoreDuplicates:true}); return linhas.length;
-  }catch(e){console.error(kw,e.message);return 0;}})); return totais.reduce((a,b)=>a+b,0);
+  const sb=db(), kws=[...KW].sort(()=>Math.random()-0.5).slice(0,3);
+  const detalhes=[];
+  for (const kw of kws) {
+    const item={palavra_chave:kw, encontrados:0, elegiveis:0, novos:0, avaliados:0, gravados:0, erro:null};
+    try {
+      const d=await shopee(`{ productOfferV2(keyword: ${JSON.stringify(kw)}, sortType: 2, page: 1, limit: 12) { nodes { ${CAMPOS} } } }`);
+      const nodes=d?.productOfferV2?.nodes||[];
+      item.encontrados=nodes.length;
+      const elegiveis=nodes.filter(n=>Number(n.sales)>=MIN_VENDAS&&Number(n.ratingStar)>=4.5);
+      item.elegiveis=elegiveis.length;
+      if (!elegiveis.length) { detalhes.push(item); continue; }
+      const {data:ja,error:erroBusca}=await sb.from("produtos").select("item_id").in("item_id",elegiveis.map(n=>String(n.itemId)));
+      if(erroBusca) throw new Error("Supabase consulta: "+erroBusca.message);
+      const vistos=new Set((ja||[]).map(x=>String(x.item_id)));
+      const novos=elegiveis.filter(n=>!vistos.has(String(n.itemId))).slice(0,4);
+      item.novos=novos.length;
+      const linhas=(await Promise.all(novos.map(async n=>{
+        try {
+          const a=await avaliar(n);
+          item.avaliados++;
+          return {item_id:String(n.itemId),nome:n.productName,imagem:n.imageUrl,preco:Number(n.priceMin),desconto:Number(n.priceDiscountRate)||0,vendas:n.sales,avaliacao:Number(n.ratingStar),comissao:Number(n.commissionRate),link_afiliado:n.offerLink,link_produto:n.productLink,nota:a.nota,motivo:a.motivo,legenda:a.legenda,status:a.nota>=NOTA_MIN?"pendente":"descartado",atualizado_em:new Date().toISOString()};
+        } catch(e) { console.error("avaliar:",kw,e.message); item.erro=item.erro||("Falha na IA: "+e.message); return null; }
+      }))).filter(Boolean);
+      if(linhas.length){
+        const {error:erroGravar}=await sb.from("produtos").upsert(linhas,{onConflict:"item_id",ignoreDuplicates:true});
+        if(erroGravar) throw new Error("Supabase gravação: "+erroGravar.message);
+        item.gravados=linhas.length;
+      }
+    } catch(e) {
+      item.erro=e instanceof Error?e.message:String(e);
+      console.error("Coleta palavra-chave:",kw,item.erro);
+    }
+    detalhes.push(item);
+  }
+  const total=detalhes.reduce((n,x)=>n+x.gravados,0);
+  const erros=detalhes.filter(x=>x.erro);
+  return {total,detalhes,erro:total===0&&erros.length?erros.map(x=>x.palavra_chave+": "+x.erro).join(" | "):null};
 }

@@ -58,7 +58,9 @@ Dados do produto: ${JSON.stringify({nome:p.nome,vendas:p.vendas,avaliacao:p.aval
   const texto=typeof r === "string" ? r : (r.video_prompt || r.prompt || "");
   const video_prompt=limitarPrompt(removerPreco(texto));
   if(!video_prompt) throw new Error("A IA não retornou um prompt válido. Tente novamente.");
-  return {video_prompt};
+  const a=await avaliar(p);
+  if(!a?.legenda || !String(a.legenda).trim()) throw new Error("A IA não retornou uma legenda válida. Tente novamente.");
+  return {video_prompt,nota:a.nota,motivo:a.motivo,legenda:a.legenda};
 }
 
 const KW=(process.env.KEYWORDS||"fone bluetooth,organizador de cozinha,luminária led,garrafa térmica,suporte de celular,mini processador").split(",").map(s=>s.trim());
@@ -76,59 +78,22 @@ export async function coletar(){
       const elegiveis=nodes.filter(n=>Number(n.sales)>=MIN_VENDAS&&Number(n.ratingStar)>=4.5);
       item.elegiveis=elegiveis.length;
       if (!elegiveis.length) { detalhes.push(item); continue; }
-
       const ids=elegiveis.map(n=>String(n.itemId));
       const {data:ja,error:erroBusca}=await sb.from("produtos").select("item_id").in("item_id",ids);
       if(erroBusca) throw new Error("Supabase consulta: "+erroBusca.message);
       const vistos=new Set((ja||[]).map(x=>String(x.item_id)));
       const existentes=elegiveis.filter(n=>vistos.has(String(n.itemId)));
       const novos=elegiveis.filter(n=>!vistos.has(String(n.itemId))).slice(0,4);
-
-      // Atualiza somente os dados comerciais dos produtos já cadastrados.
-      // Preserva status, nota da IA, prompt de vídeo, links rastreáveis e decisões do usuário.
       for(const n of existentes){
-        const {error}=await sb.from("produtos").update({
-          nome:n.productName,
-          imagem:n.imageUrl,
-          preco:Number(n.priceMin),
-          desconto:Number(n.priceDiscountRate)||0,
-          vendas:n.sales,
-          avaliacao:Number(n.ratingStar),
-          comissao:Number(n.commissionRate),
-          link_afiliado:n.offerLink,
-          link_produto:n.productLink,
-          atualizado_em:new Date().toISOString()
-        }).eq("item_id",String(n.itemId));
-        if(error){
-          item.erro=item.erro||("Falha ao atualizar item "+n.itemId+": "+error.message);
-          console.error("Atualizar produto:",kw,n.itemId,error.message);
-        }else{
-          item.atualizados++;
-          item.gravados++;
-        }
+        const {error}=await sb.from("produtos").update({nome:n.productName,imagem:n.imageUrl,preco:Number(n.priceMin),desconto:Number(n.priceDiscountRate)||0,vendas:n.sales,avaliacao:Number(n.ratingStar),comissao:Number(n.commissionRate),link_afiliado:n.offerLink,link_produto:n.productLink,atualizado_em:new Date().toISOString()}).eq("item_id",String(n.itemId));
+        if(error){item.erro=item.erro||("Falha ao atualizar item "+n.itemId+": "+error.message);console.error("Atualizar produto:",kw,n.itemId,error.message);}else{item.atualizados++;item.gravados++;}
       }
-
       item.novos=novos.length;
-      const linhas=(await Promise.all(novos.map(async n=>{
-        try {
-          const a=await avaliar(n);
-          item.avaliados++;
-          return {item_id:String(n.itemId),nome:n.productName,imagem:n.imageUrl,preco:Number(n.priceMin),desconto:Number(n.priceDiscountRate)||0,vendas:n.sales,avaliacao:Number(n.ratingStar),comissao:Number(n.commissionRate),link_afiliado:n.offerLink,link_produto:n.productLink,nota:a.nota,motivo:a.motivo,legenda:a.legenda,status:a.nota>=NOTA_MIN?"pendente":"descartado",atualizado_em:new Date().toISOString()};
-        } catch(e) { console.error("avaliar:",kw,e.message); item.erro=item.erro||("Falha na IA: "+e.message); return null; }
-      }))).filter(Boolean);
-      if(linhas.length){
-        const {error:erroGravar}=await sb.from("produtos").insert(linhas);
-        if(erroGravar) throw new Error("Supabase gravação: "+erroGravar.message);
-        item.gravados+=linhas.length;
-      }
-    } catch(e) {
-      item.erro=item.erro|| (e instanceof Error?e.message:String(e));
-      console.error("Coleta palavra-chave:",kw,item.erro);
-    }
+      const linhas=(await Promise.all(novos.map(async n=>{try{const a=await avaliar(n);item.avaliados++;return {item_id:String(n.itemId),nome:n.productName,imagem:n.imageUrl,preco:Number(n.priceMin),desconto:Number(n.priceDiscountRate)||0,vendas:n.sales,avaliacao:Number(n.ratingStar),comissao:Number(n.commissionRate),link_afiliado:n.offerLink,link_produto:n.productLink,nota:a.nota,motivo:a.motivo,legenda:a.legenda,status:a.nota>=NOTA_MIN?"pendente":"descartado",atualizado_em:new Date().toISOString()};}catch(e){console.error("avaliar:",kw,e.message);item.erro=item.erro||("Falha na IA: "+e.message);return null;}}))).filter(Boolean);
+      if(linhas.length){const {error:erroGravar}=await sb.from("produtos").insert(linhas);if(erroGravar)throw new Error("Supabase gravação: "+erroGravar.message);item.gravados+=linhas.length;}
+    } catch(e) {item.erro=item.erro||(e instanceof Error?e.message:String(e));console.error("Coleta palavra-chave:",kw,item.erro);}
     detalhes.push(item);
   }
-  const total=detalhes.reduce((n,x)=>n+x.novos,0);
-  const atualizadosTotal=detalhes.reduce((n,x)=>n+x.atualizados,0);
-  const erros=detalhes.filter(x=>x.erro);
+  const total=detalhes.reduce((n,x)=>n+x.novos,0),atualizadosTotal=detalhes.reduce((n,x)=>n+x.atualizados,0),erros=detalhes.filter(x=>x.erro);
   return {total,atualizadosTotal,detalhes,erro:total===0&&atualizadosTotal===0&&erros.length?erros.map(x=>x.palavra_chave+": "+x.erro).join(" | "):null};
 }

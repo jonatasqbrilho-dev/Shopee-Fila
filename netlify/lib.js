@@ -9,9 +9,7 @@ export async function shopee(query) {
   const id = process.env.SHOPEE_APP_ID, payload = JSON.stringify({ query });
   const ts = Math.floor(Date.now() / 1000);
   const sig = crypto.createHash("sha256").update(id + ts + payload + process.env.SHOPEE_SECRET).digest("hex");
-  const r = await fetch("https://open-api.affiliate.shopee.com.br/graphql", {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: `SHA256 Credential=${id}, Timestamp=${ts}, Signature=${sig}` }, body: payload,
-  });
+  const r = await fetch("https://open-api.affiliate.shopee.com.br/graphql", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `SHA256 Credential=${id}, Timestamp=${ts}, Signature=${sig}` }, body: payload });
   const j = await r.json(); if (j.errors) throw new Error(JSON.stringify(j.errors)); return j.data;
 }
 
@@ -47,21 +45,30 @@ const limitarPrompt=texto=>{let s=String(texto||"");if(s.length<=850)return s;re
 const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,"").replace(/\b\d+[.,]\d{2}\s?(?:reais)?\b/gi,"").replace(/\b(?:por|de|a partir de)\s+\d+(?:[.,]\d{2})?\s?(?:reais|R\$)?\b/gi,"").replace(/\s{2,}/g," ").trim();
 
 export async function gerarConteudo(p) {
-  const prompt=`Você é especialista em criar PROMPTS para Shopee Video Brasil. Gere UM único prompt para um vídeo vertical 9:16, preferencialmente com 20 a 30 segundos e nunca acima de 60 segundos, usando as imagens REAIS do anúncio como referência.
-REGRAS OBRIGATÓRIAS DA SHOPEE PARA RELEVÂNCIA DO PRODUTO:
-1) O vídeo deve apresentar EXATAMENTE o produto vinculado ao anúncio. Não mostre produto parecido, modelo diferente, outra marca, outra cor, outro tamanho, outra capacidade, outra voltagem ou outra variação.
-2) Não altere, redesenhe ou recrie o produto. Preserve fielmente aparência, cor, formato, marca/logo, embalagem, acessórios, quantidade, materiais, acabamentos e demais características visíveis nas imagens reais.
-3) Não invente nem adicione características, funções, medidas, materiais, especificações, resultados ou acessórios. Use somente informações comprovadas nos dados e nas imagens do anúncio.
-4) Sempre que possível, use as imagens reais do anúncio como base e crie apenas cenário, enquadramento, iluminação, movimentos de câmera, zoom, transições e efeitos que não modifiquem o produto.
-5) Não use produto genérico ou imagem de catálogo que possa representar outro item. O espectador deve conseguir identificar o mesmo produto que receberá ao clicar no anúncio.
-6) Se houver kit, conjunto ou múltiplas unidades, represente somente a composição indicada nos dados do anúncio e deixe a quantidade clara quando necessário.
-7) Não faça comparações com produtos concorrentes nem inclua outros produtos que possam ser confundidos com o item vinculado.
-8) Textos na tela, se usados, devem ser curtos e mencionar somente características comprovadas do próprio produto.
+  const prompt=`Você é um especialista em criação de PROMPTS de alta conversão para vídeos de produtos da Shopee Brasil. Sua tarefa é gerar UM único prompt pronto para uma IA de vídeo. O objetivo é aumentar atenção, retenção, desejo e intenção de compra, sem inventar informações.
+
+FORMATO: vídeo vertical 9:16, 20 a 30 segundos, ritmo rápido e profissional, usando prioritariamente as IMAGENS REAIS do anúncio como referência.
+
+ESTRUTURA DE CONVERSÃO OBRIGATÓRIA:
+1) Comece nos primeiros 1-2 segundos com um gancho visual forte mostrando o produto em destaque e, se possível, seu principal benefício REAL.
+2) Apresente rapidamente o produto e o problema/necessidade que ele atende, somente quando isso puder ser inferido com segurança pelos dados ou imagens.
+3) Mostre 2 ou 3 benefícios ou usos reais e comprovados, preferindo demonstrações visuais do próprio produto em vez de texto genérico.
+4) Use close-ups, movimentos de câmera, cortes rápidos, enquadramentos variados e iluminação atraente para valorizar o produto sem alterá-lo.
+5) Crie sensação de desejo e praticidade, mas sem promessas exageradas, medo artificial, escassez falsa ou afirmações não comprovadas.
+6) Termine com uma CTA visual curta e natural incentivando a pessoa a conferir o produto na Shopee/abrir o produto pelo botão ou link disponível.
+7) O vídeo deve manter o produto como protagonista do início ao fim e evitar distrações.
+
+REGRAS ABSOLUTAS DE FIDELIDADE:
+- Apresente EXATAMENTE o produto vinculado ao anúncio. Nunca troque por produto parecido, modelo diferente, marca diferente, cor, tamanho, capacidade, voltagem ou variação diferente.
+- Preserve fielmente aparência, formato, cor, marca/logo, embalagem, quantidade, acessórios, materiais e acabamento visíveis nas imagens reais.
+- Não invente funções, especificações, medidas, materiais, resultados, certificações, compatibilidades, acessórios ou benefícios.
+- Não adicione produtos concorrentes ou objetos que possam ser confundidos com itens vendidos no anúncio.
+- Se for kit/conjunto, mostre somente a composição indicada no anúncio.
+- Textos na tela devem ser mínimos, legíveis e baseados apenas em características comprovadas.
 
 REGRA ABSOLUTA SOBRE PREÇO: NÃO mostre, escreva, fale ou mencione preço, valor em reais, desconto, porcentagem de desconto ou promoção de preço.
 
-Crie um vídeo atraente, claro e profissional, com foco exclusivo no produto e em seus benefícios reais. Não faça roteiro, narração separada, legenda, hashtags ou campos adicionais. Responda SOMENTE com JSON válido neste formato: {"video_prompt":"texto completo do prompt"}. O texto dentro de video_prompt deve ter no máximo 850 caracteres, contando espaços. Não inclua markdown nem texto fora do JSON.
-Dados do produto: ${JSON.stringify({nome:p.nome,vendas:p.vendas,avaliacao:p.avaliacao,motivo:p.motivo,imagem:p.imagem})}`;
+Não gere roteiro, narração separada, legenda, hashtags ou explicações. Gere SOMENTE JSON válido no formato {"video_prompt":"..."}. O texto de video_prompt deve ter no máximo 850 caracteres, contando espaços. Escreva em português brasileiro.\n\nDados reais do produto: ${JSON.stringify({nome:p.nome,vendas:p.vendas,avaliacao:p.avaliacao,motivo:p.motivo,imagem:p.imagem})}`;
   const r=await iaJson(prompt);
   const texto=typeof r === "string" ? r : (r.video_prompt || r.prompt || "");
   const video_prompt=limitarPrompt(removerPreco(texto));

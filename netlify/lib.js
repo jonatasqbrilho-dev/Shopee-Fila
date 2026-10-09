@@ -47,16 +47,18 @@ const limitarPrompt=texto=>{let s=String(texto||"");if(s.length<=850)return s;re
 const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,"").replace(/\b\d+[.,]\d{2}\s?(?:reais)?\b/gi,"").replace(/\b(?:por|de|a partir de)\s+\d+(?:[.,]\d{2})?\s?(?:reais|R\$)?\b/gi,"").replace(/\s{2,}/g," ").trim();
 
 export async function gerarConteudo(p) {
-  const prompt=`Você é um especialista em criação de PROMPTS para vídeos curtos de afiliado Shopee Brasil. Gere SOMENTE UM PROMPT para criar um vídeo vertical 9:16 de aproximadamente 10 segundos, usando as imagens REAIS do anúncio como referência.
+  const prompt=`Você é um especialista em criação de PROMPTS para vídeos curtos de afiliado Shopee Brasil. Gere UM único prompt para criar um vídeo vertical 9:16 de aproximadamente 10 segundos, usando as imagens REAIS do anúncio como referência.
 REGRA ABSOLUTA: NÃO altere, redesenhe ou invente o produto. Preserve exatamente aparência, cor, formato, marca/logo, embalagem, acessórios e características visíveis nas imagens. Não invente especificações, medidas, materiais, funções, certificações, resultados ou comparações que não estejam nos dados fornecidos. Use apenas características explicitamente presentes nos dados do anúncio.
 O prompt deve orientar movimentos simples de câmera, zoom, cortes, enquadramento e textos curtos sobre as imagens reais, criando um vídeo atraente e profissional. Não gere um produto diferente e não crie acessórios ou características inexistentes.
 REGRA ABSOLUTA SOBRE PREÇO: NÃO mostre, escreva, fale ou mencione qualquer preço, valor em reais, desconto, porcentagem de desconto ou promoção de preço. O vídeo deve focar exclusivamente no produto, suas características e benefícios reais, terminando com uma chamada para conferir o produto na Shopee.
-Não faça roteiro, narração separada, legenda, hashtags ou campos adicionais. Entregue somente o texto do prompt.
-IMPORTANTE: o prompt final DEVE ter no máximo 850 caracteres, contando espaços. Seja direto, detalhado e aproveite bem o limite.
+Não faça roteiro, narração separada, legenda, hashtags ou campos adicionais.
+IMPORTANTE: responda SOMENTE com um JSON válido neste formato: {"video_prompt":"texto completo do prompt"}. O texto dentro de video_prompt deve ter no máximo 850 caracteres, contando espaços. Não inclua markdown nem texto fora do JSON.
 Dados do produto: ${JSON.stringify({nome:p.nome,vendas:p.vendas,avaliacao:p.avaliacao,motivo:p.motivo,imagem:p.imagem})}`;
   const r=await iaJson(prompt);
   const texto=typeof r === "string" ? r : (r.video_prompt || r.prompt || "");
-  return {video_prompt:limitarPrompt(removerPreco(texto))};
+  const video_prompt=limitarPrompt(removerPreco(texto));
+  if(!video_prompt) throw new Error("A IA não retornou um prompt válido. Tente novamente.");
+  return {video_prompt};
 }
 
 const KW=(process.env.KEYWORDS||"fone bluetooth,organizador de cozinha,luminária led,garrafa térmica,suporte de celular,mini processador").split(",").map(s=>s.trim());

@@ -66,7 +66,7 @@ export async function coletar(){
   const sb=db(), kws=[...KW].sort(()=>Math.random()-0.5).slice(0,3);
   const detalhes=[];
   for (const kw of kws) {
-    const item={palavra_chave:kw, encontrados:0, elegiveis:0, novos:0, avaliados:0, gravados:0, erro:null};
+    const item={palavra_chave:kw, encontrados:0, elegiveis:0, novos:0, atualizados:0, avaliados:0, gravados:0, erro:null};
     try {
       const d=await shopee(`{ productOfferV2(keyword: ${JSON.stringify(kw)}, sortType: 2, page: 1, limit: 12) { nodes { ${CAMPOS} } } }`);
       const nodes=d?.productOfferV2?.nodes||[];
@@ -74,10 +74,38 @@ export async function coletar(){
       const elegiveis=nodes.filter(n=>Number(n.sales)>=MIN_VENDAS&&Number(n.ratingStar)>=4.5);
       item.elegiveis=elegiveis.length;
       if (!elegiveis.length) { detalhes.push(item); continue; }
-      const {data:ja,error:erroBusca}=await sb.from("produtos").select("item_id").in("item_id",elegiveis.map(n=>String(n.itemId)));
+
+      const ids=elegiveis.map(n=>String(n.itemId));
+      const {data:ja,error:erroBusca}=await sb.from("produtos").select("item_id").in("item_id",ids);
       if(erroBusca) throw new Error("Supabase consulta: "+erroBusca.message);
       const vistos=new Set((ja||[]).map(x=>String(x.item_id)));
+      const existentes=elegiveis.filter(n=>vistos.has(String(n.itemId)));
       const novos=elegiveis.filter(n=>!vistos.has(String(n.itemId))).slice(0,4);
+
+      // Atualiza somente os dados comerciais dos produtos já cadastrados.
+      // Preserva status, nota da IA, prompt de vídeo, links rastreáveis e decisões do usuário.
+      for(const n of existentes){
+        const {error}=await sb.from("produtos").update({
+          nome:n.productName,
+          imagem:n.imageUrl,
+          preco:Number(n.priceMin),
+          desconto:Number(n.priceDiscountRate)||0,
+          vendas:n.sales,
+          avaliacao:Number(n.ratingStar),
+          comissao:Number(n.commissionRate),
+          link_afiliado:n.offerLink,
+          link_produto:n.productLink,
+          atualizado_em:new Date().toISOString()
+        }).eq("item_id",String(n.itemId));
+        if(error){
+          item.erro=item.erro||("Falha ao atualizar item "+n.itemId+": "+error.message);
+          console.error("Atualizar produto:",kw,n.itemId,error.message);
+        }else{
+          item.atualizados++;
+          item.gravados++;
+        }
+      }
+
       item.novos=novos.length;
       const linhas=(await Promise.all(novos.map(async n=>{
         try {
@@ -87,17 +115,18 @@ export async function coletar(){
         } catch(e) { console.error("avaliar:",kw,e.message); item.erro=item.erro||("Falha na IA: "+e.message); return null; }
       }))).filter(Boolean);
       if(linhas.length){
-        const {error:erroGravar}=await sb.from("produtos").upsert(linhas,{onConflict:"item_id",ignoreDuplicates:true});
+        const {error:erroGravar}=await sb.from("produtos").insert(linhas);
         if(erroGravar) throw new Error("Supabase gravação: "+erroGravar.message);
-        item.gravados=linhas.length;
+        item.gravados+=linhas.length;
       }
     } catch(e) {
-      item.erro=e instanceof Error?e.message:String(e);
+      item.erro=item.erro|| (e instanceof Error?e.message:String(e));
       console.error("Coleta palavra-chave:",kw,item.erro);
     }
     detalhes.push(item);
   }
-  const total=detalhes.reduce((n,x)=>n+x.gravados,0);
+  const total=detalhes.reduce((n,x)=>n+x.novos,0);
+  const atualizadosTotal=detalhes.reduce((n,x)=>n+x.atualizados,0);
   const erros=detalhes.filter(x=>x.erro);
-  return {total,detalhes,erro:total===0&&erros.length?erros.map(x=>x.palavra_chave+": "+x.erro).join(" | "):null};
+  return {total,atualizadosTotal,detalhes,erro:total===0&&atualizadosTotal===0&&erros.length?erros.map(x=>x.palavra_chave+": "+x.erro).join(" | "):null};
 }

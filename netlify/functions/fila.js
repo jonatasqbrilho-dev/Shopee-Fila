@@ -44,7 +44,7 @@ export default async(req)=>{
   if(req.method==="GET"){
     if(url.searchParams.get("campos")){try{const d=await shopee(`{ __type(name: "ProductOfferV2") { fields { name } } }`),campos=d.__type.fields.map(f=>f.name);return json({campos,video:campos.filter(c=>/video|media/i.test(c)),imagens:campos.filter(c=>/image|img|pic|photo/i.test(c))});}catch(e){return json({erro:e.message},500)}}
     if(url.searchParams.get("resumo")){const {data,error}=await sb.from("produtos").select("status,pedidos,itens_vendidos,valor_pedidos,comissao_estimada,comissao_validada,cliques_convertidos");if(error)return json({erro:error.message},500);const r=(data||[]).reduce((a,p)=>{a.produtos++;a.pedidos+=Number(p.pedidos||0);a.itens+=Number(p.itens_vendidos||0);a.vendas+=Number(p.valor_pedidos||0);a.estimada+=Number(p.comissao_estimada||0);a.validada+=Number(p.comissao_validada||0);a.cliques+=Number(p.cliques_convertidos||0);a.status[p.status]=(a.status[p.status]||0)+1;return a},{produtos:0,pedidos:0,itens:0,vendas:0,estimada:0,validada:0,cliques:0,status:{}});return json(r)}
-    const {data,error}=await sb.from("produtos").select("*").eq("status",url.searchParams.get("status")||"pendente").order("nota",{ascending:false}).limit(100);
+    const {data,error}=await sb.from("produtos").select("*").eq("status",url.searchParams.get("status")||"pendente").order("atualizado_em",{ascending:false}).limit(100);
     if(error)return json({erro:error.message},500);
     // O projeto agora trabalha somente com o prompt. Campos antigos de roteiro/narração/textos/CTA/hashtags não devem aparecer no painel.
     const limpos=(data||[]).map(p=>({...p,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[]}));

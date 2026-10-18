@@ -1,5 +1,6 @@
 import { getStore } from "@netlify/blobs";
-import { autorizado, coletar } from "../lib.js";
+import { autorizado } from "../lib.js";
+import { coletarFeminino } from "../coleta-feminina.js";
 
 const store = getStore({ name: "coleta-status", consistency: "strong" });
 
@@ -10,7 +11,7 @@ export default async (req) => {
   await store.setJSON("atual", { status: "running", inicio, fim: null, adicionados: 0, atualizados: 0, erro: null, detalhes: [] });
 
   try {
-    const resultado = await coletar();
+    const resultado = await coletarFeminino();
     const erro = resultado?.erro || null;
     await store.setJSON("atual", {
       status: erro && !resultado?.total && !resultado?.atualizadosTotal ? "error" : "done",

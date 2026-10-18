@@ -4,3 +4,8 @@
 
 [functions]
   node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/buscar-video"
+  to = "/buscar-video.html"
+  status = 200

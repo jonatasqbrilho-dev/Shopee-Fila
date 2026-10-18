@@ -9,3 +9,9 @@
   from = "/buscar-video"
   to = "/buscar-video.html"
   status = 200
+
+[[redirects]]
+  from = "/"
+  to = "/painel-video.html"
+  status = 200
+  force = true

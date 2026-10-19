@@ -10,6 +10,7 @@ const htmlMeta = (html, name) => {
 const jsonLd=html=>{const out=[];for(const m of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){try{const x=JSON.parse(m[1].trim());out.push(...(Array.isArray(x)?x:[x]));}catch{}}return out;};
 const platformOf=url=>/tiktok\.com/i.test(url)?"tiktok":/shopee\./i.test(url)?"shopee":"outro";
 const cleanUrl=url=>{try{return new URL(String(url).trim()).toString();}catch{return "";}};
+const proxyImage=url=>url?`/.netlify/functions/imagem-proxy?url=${encodeURIComponent(url)}`:"";
 
 async function fetchText(url){
   const r=await fetch(url,{redirect:"follow",headers:{"user-agent":"Mozilla/5.0 (compatible; Shopee-Fila/1.0; +https://shopeefila.netlify.app)"}});
@@ -36,7 +37,6 @@ function findTikTokShopLink(text){
 async function inspectTikTok(url){
   const original=cleanUrl(url);
   if(!original)throw new Error("Link do TikTok inválido.");
-  // oEmbed is the official TikTok endpoint and is tried first so short vt.tiktok.com links work.
   const embed=await tiktokOembed(original);
   let page=null;
   try{page=await fetchText(original);}catch{}
@@ -80,7 +80,7 @@ export default async req=>{
  if(b.acao==="vincular_link"){
   if(!b.id||!b.url)return json({erro:"Informe o produto e o link."},400);
   const url=cleanUrl(b.url);if(!url)return json({erro:"Link inválido."},400);
-  try{const info=await inspect(url);if(!["shopee","tiktok"].includes(info.platform))return json({erro:"O link precisa ser da Shopee ou TikTok Shop."},400);const sb=db(),{data:p,error}=await sb.from("produtos").select("id,links_plataforma,link_produto,link_afiliado").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado."},404);const links={...(p.links_plataforma||{}),[info.platform]:info.canonical||info.url};const patch={links_plataforma:links,atualizado_em:new Date().toISOString()};if(info.platform==="shopee")patch.link_produto=info.canonical||info.url;else patch.link_afiliado=p.link_afiliado||info.url;const{error:e}=await sb.from("produtos").update(patch).eq("id",b.id);if(e)return json({erro:e.message},500);return json({ok:true,plataforma:info.platform,link:info.canonical||info.url,info});}catch(e){return json({erro:e.message||"Não foi possível ler o link."},400)}
+  try{const info=await inspect(url);if(!["shopee","tiktok"].includes(info.platform))return json({erro:"O link precisa ser da Shopee ou TikTok Shop."},400);const sb=db(),{data:p,error}=await sb.from("produtos").select("id,links_plataforma,link_produto,link_afiliado,imagem").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado."},404);const links={...(p.links_plataforma||{}),[info.platform]:info.canonical||info.url};const patch={links_plataforma:links,atualizado_em:new Date().toISOString()};if(info.image&&!p.imagem)patch.imagem=info.platform==="tiktok"?proxyImage(info.image):info.image;if(info.platform==="shopee")patch.link_produto=info.canonical||info.url;else patch.link_afiliado=p.link_afiliado||info.url;const{error:e}=await sb.from("produtos").update(patch).eq("id",b.id);if(e)return json({erro:e.message},500);return json({ok:true,plataforma:info.platform,link:info.canonical||info.url,info});}catch(e){return json({erro:e.message||"Não foi possível ler o link."},400)}
  }
  const url=cleanUrl(b.url);if(!url)return json({erro:"Cole um link válido da Shopee ou TikTok Shop."},400);
  try{
@@ -93,7 +93,7 @@ export default async req=>{
   if(info.platform==="tiktok"&&info.shop_link)links.tiktok_shop=info.shop_link;
   const isTikTok=info.platform==="tiktok",nome=info.name||"Produto importado do TikTok";
   const legenda=isTikTok?`${info.description||""}${info.author?` • Criado por @${info.author}`:""}`.trim():(info.description||"");
-  const row={item_id:itemId,nome,imagem:info.image||null,preco:Number(info.price)||0,desconto:0,vendas:0,avaliacao:0,comissao:0,link_afiliado:baseLink,link_produto:isTikTok?(info.shop_link||baseLink):(info.canonical||info.url),links_plataforma:links,nota:0,motivo:isTikTok?`Importado do TikTok${info.source==="tiktok_oembed"?" via oEmbed oficial":""}. Dados de vendas, preço e comissão dependem da informação do TikTok Shop.`:"Adicionado manualmente via Shopee.",legenda,status:"pendente",atualizado_em:agora};
+  const row={item_id:itemId,nome,imagem:info.image?(isTikTok?proxyImage(info.image):info.image):null,preco:Number(info.price)||0,desconto:0,vendas:0,avaliacao:0,comissao:0,link_afiliado:baseLink,link_produto:isTikTok?(info.shop_link||baseLink):(info.canonical||info.url),links_plataforma:links,nota:0,motivo:isTikTok?`Importado do TikTok${info.source==="tiktok_oembed"?" via oEmbed oficial":""}. Dados de vendas, preço e comissão dependem da informação do TikTok Shop.`:"Adicionado manualmente via Shopee.",legenda,status:"pendente",atualizado_em:agora};
   const{data,error}=await sb.from("produtos").insert(row).select("*").single();
   if(error)return json({erro:"Não foi possível salvar o produto: "+error.message},500);
   return json({ok:true,produto:data,info});

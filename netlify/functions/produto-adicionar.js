@@ -41,10 +41,6 @@ function findTikTokShopLink(text){
 
 async function inspect(url){
   const platform=platformOf(url);
-
-  // TikTok: links vt.tiktok.com are share/redirect links. The normal page HTML
-  // often does not expose product data, so use TikTok's official oEmbed endpoint
-  // as the reliable fallback for title, creator and thumbnail.
   if(platform==="tiktok"){
     let page=null;
     try{page=await fetchText(url);}catch{}
@@ -69,6 +65,14 @@ async function inspect(url){
 
 export default async req=>{
  if(!autorizado(req))return json({erro:"Senha incorreta"},401);if(req.method!=="POST")return json({erro:"Método não permitido"},405);const b=await req.json().catch(()=>({}));
+ if(b.acao==="deletar"){
+  if(!b.id)return json({erro:"Informe o produto."},400);
+  const sb=db();
+  const {data,error}=await sb.from("produtos").delete().eq("id",b.id).select("id").single();
+  if(error)return json({erro:"Não foi possível excluir o produto: "+error.message},500);
+  if(!data)return json({erro:"Produto não encontrado."},404);
+  return json({ok:true,excluido:true,id:b.id});
+ }
  if(b.acao==="vincular_link"){
   if(!b.id||!b.url)return json({erro:"Informe o produto e o link."},400);const url=cleanUrl(b.url);if(!url)return json({erro:"Link inválido."},400);
   try{const info=await inspect(url);if(!["shopee","tiktok"].includes(info.platform))return json({erro:"O link precisa ser da Shopee ou TikTok Shop."},400);const sb=db(),{data:p,error}=await sb.from("produtos").select("id,links_plataforma,link_produto,link_afiliado").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado."},404);const links={...(p.links_plataforma||{}),[info.platform]:info.canonical||info.url};const patch={links_plataforma:links,atualizado_em:new Date().toISOString()};if(info.platform==="shopee")patch.link_produto=info.canonical||info.url;else patch.link_afiliado=p.link_afiliado||info.url;const{error:e}=await sb.from("produtos").update(patch).eq("id",b.id);if(e)return json({erro:e.message},500);return json({ok:true,plataforma:info.platform,link:info.canonical||info.url,info});}catch(e){return json({erro:e.message||"Não foi possível ler o link."},400)}
@@ -84,7 +88,6 @@ export default async req=>{
 
   const agora=new Date().toISOString(),itemId=`manual_${Date.now()}`;
   const links={[info.platform]:info.canonical||info.url};
-  // If the TikTok page exposes a separate Shop/product URL, keep it too.
   if(info.platform==="tiktok"&&info.shop_link)links.tiktok_shop=info.shop_link;
   const isTikTok=info.platform==="tiktok";
   const nome=info.name||"Produto importado do TikTok";

@@ -23,19 +23,13 @@ async function tiktokOembed(url){
     const r=await fetch(endpoint,{headers:{"user-agent":"Mozilla/5.0 (compatible; Shopee-Fila/1.0)"}});
     if(!r.ok)return null;
     const j=await r.json();
-    return {
-      title:String(j.title||"").trim(),
-      author:String(j.author_name||"").trim(),
-      author_url:String(j.author_url||"").trim(),
-      thumbnail:String(j.thumbnail_url||"").trim(),
-      html:String(j.html||"")
-    };
+    return {title:String(j.title||"").trim(),author:String(j.author_name||"").trim(),author_url:String(j.author_url||"").trim(),thumbnail:String(j.thumbnail_url||"").trim(),html:String(j.html||"")};
   }catch{return null;}
 }
 
 function findTikTokShopLink(text){
   const s=String(text||"").replace(/\\u002F/g,"/").replace(/\\\//g,"/");
-  const matches=s.match(/https?:\\/\\/(?:shop\\.)?tiktok\\.com\\/[^\"'<>\\s\\]+/gi)||[];
+  const matches=s.match(/https?:\/\/(?:shop\.)?tiktok\.com\/[^\"'<>\s]+/gi)||[];
   return matches.find(x=>/shop|product|goods/i.test(x))||"";
 }
 
@@ -44,10 +38,9 @@ async function inspect(url){
   if(platform==="tiktok"){
     let page=null;
     try{page=await fetchText(url);}catch{}
-    const finalUrl=page?.url||url;
-    const html=page?.html||"";
+    const finalUrl=page?.url||url, html=page?.html||"";
     const embed=await tiktokOembed(finalUrl)||await tiktokOembed(url);
-    const ld=jsonLd(html).find(x=>x&&(/Product|VideoObject/i.test(String(x["@type"]||""))||x.name||x.image));
+    const ld=jsonLd(html).find(x=>x&&(/Product|VideoObject/i.test(String(x["@type"]||"))||x.name||x.image));
     const name=htmlMeta(html,"og:title")||htmlMeta(html,"twitter:title")||String(ld?.name||"").trim()||embed?.title||"Vídeo TikTok";
     const image=htmlMeta(html,"og:image")||htmlMeta(html,"twitter:image")||(Array.isArray(ld?.image)?ld.image[0]:ld?.image)||embed?.thumbnail||"";
     const description=htmlMeta(html,"og:description")||htmlMeta(html,"description")||String(ld?.description||"").trim()||embed?.title||"";
@@ -57,14 +50,15 @@ async function inspect(url){
     const currency=ld?.offers?.priceCurrency||"BRL";
     return {url:finalUrl,canonical,name,image,description,price,currency,platform,author:embed?.author||"",author_url:embed?.author_url||"",video_url:canonical,shop_link:shopLink,source:"tiktok_oembed"};
   }
-
   const r=await fetchText(url),html=r.html,finalUrl=r.url,ld=jsonLd(html).find(x=>x&&(/Product/i.test(x["@type"]||"")||x.name||x.image));
   const name=htmlMeta(html,"og:title")||htmlMeta(html,"twitter:title")||esc(ld?.name||"")||"Produto importado",image=htmlMeta(html,"og:image")||htmlMeta(html,"twitter:image")||(Array.isArray(ld?.image)?ld.image[0]:ld?.image)||"",description=htmlMeta(html,"og:description")||htmlMeta(html,"description")||esc(ld?.description||""),canonical=htmlMeta(html,"og:url")||((html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)||[])[1]||finalUrl),price=ld?.offers?.price??ld?.offers?.lowPrice??null,currency=ld?.offers?.priceCurrency||"BRL";
   return{url:finalUrl,canonical,name,image,description,price,currency,platform};
 }
 
 export default async req=>{
- if(!autorizado(req))return json({erro:"Senha incorreta"},401);if(req.method!=="POST")return json({erro:"Método não permitido"},405);const b=await req.json().catch(()=>({}));
+ if(!autorizado(req))return json({erro:"Senha incorreta"},401);
+ if(req.method!=="POST")return json({erro:"Método não permitido"},405);
+ const b=await req.json().catch(()=>({}));
  if(b.acao==="deletar"){
   if(!b.id)return json({erro:"Informe o produto."},400);
   const sb=db();
@@ -81,39 +75,14 @@ export default async req=>{
  try{
   const info=await inspect(url);
   if(!["shopee","tiktok"].includes(info.platform))return json({erro:"O link precisa ser da Shopee ou TikTok Shop."},400);
-  const sb=db();
-  let existentes=[];
+  const sb=db();let existentes=[];
   for(const col of ["link_produto","link_afiliado"]){const{data}=await sb.from("produtos").select("id,nome,links_plataforma").eq(col,info.canonical||info.url).limit(1);if(data?.length)existentes.push(...data);}
   if(existentes.length)return json({ok:true,existente:true,id:existentes[0].id,info,links_plataforma:existentes[0].links_plataforma||{}});
-
-  const agora=new Date().toISOString(),itemId=`manual_${Date.now()}`;
-  const links={[info.platform]:info.canonical||info.url};
+  const agora=new Date().toISOString(),itemId=`manual_${Date.now()}`,links={[info.platform]:info.canonical||info.url};
   if(info.platform==="tiktok"&&info.shop_link)links.tiktok_shop=info.shop_link;
-  const isTikTok=info.platform==="tiktok";
-  const nome=info.name||"Produto importado do TikTok";
-  const legenda=isTikTok
-    ? `${info.description||""}${info.author?` • Criado por @${info.author}`:""}`.trim()
-    : (info.description||"");
-  const row={
-    item_id:itemId,
-    nome,
-    imagem:info.image||null,
-    preco:Number(info.price)||0,
-    desconto:0,
-    vendas:0,
-    avaliacao:0,
-    comissao:0,
-    link_afiliado:info.url,
-    link_produto:isTikTok?(info.shop_link||null):(info.canonical||info.url),
-    links_plataforma:links,
-    nota:0,
-    motivo:isTikTok
-      ? `Importado do TikTok${info.source==="tiktok_oembed"?" via oEmbed oficial":""}. Dados de vendas, preço e comissão dependem da informação do TikTok Shop.`
-      : "Adicionado manualmente via Shopee.",
-    legenda,
-    status:"pendente",
-    atualizado_em:agora
-  };
+  const isTikTok=info.platform==="tiktok",nome=info.name||"Produto importado do TikTok";
+  const legenda=isTikTok?`${info.description||""}${info.author?` • Criado por @${info.author}`:""}`.trim():(info.description||"");
+  const row={item_id:itemId,nome,imagem:info.image||null,preco:Number(info.price)||0,desconto:0,vendas:0,avaliacao:0,comissao:0,link_afiliado:info.url,link_produto:isTikTok?(info.shop_link||null):(info.canonical||info.url),links_plataforma:links,nota:0,motivo:isTikTok?`Importado do TikTok${info.source==="tiktok_oembed"?" via oEmbed oficial":""}. Dados de vendas, preço e comissão dependem da informação do TikTok Shop.`:"Adicionado manualmente via Shopee.",legenda,status:"pendente",atualizado_em:agora};
   const{data,error}=await sb.from("produtos").insert(row).select("*").single();
   if(error)return json({erro:"Não foi possível salvar o produto: "+error.message},500);
   return json({ok:true,produto:data,info});

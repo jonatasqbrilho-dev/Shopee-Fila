@@ -11,6 +11,26 @@
   status = 200
 
 [[redirects]]
+  from = "/tiktok/login"
+  to = "/.netlify/functions/tiktok-login"
+  status = 302
+
+[[redirects]]
+  from = "/tiktok/callback"
+  to = "/.netlify/functions/tiktok-callback"
+  status = 200
+
+[[redirects]]
+  from = "/tiktok/status"
+  to = "/.netlify/functions/tiktok-status"
+  status = 200
+
+[[redirects]]
+  from = "/tiktok/desconectar"
+  to = "/.netlify/functions/tiktok-desconectar"
+  status = 200
+
+[[redirects]]
   from = "/"
   to = "/painel-video.html"
   status = 200

@@ -1,5 +1,6 @@
 import { TelegramClient } from "teleproto";
 import { StringSession } from "teleproto/sessions";
+import { getStore } from "@netlify/blobs";
 import { db, json, autorizado } from "../lib.js";
 
 const TT = "https://open.tiktokapis.com/v2";
@@ -41,21 +42,31 @@ async function tiktokOAuthCallback(req) {
   return new Response(`<meta name="viewport" content="width=device-width"><body style="font-family:system-ui;padding:30px"><h2>✅ TikTok conectado</h2><p>Você pode fechar esta janela e voltar ao Shopee-Fila.</p><script>setTimeout(()=>window.close(),1200)</script></body>`, { headers: { "content-type": "text/html; charset=utf-8", "Set-Cookie": "tt_oauth_state=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax" } });
 }
 
-async function getTikTokToken(sb) {
-  const { data, error } = await sb.from("social_integrations").select("*").eq("provider", "tiktok").maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.refresh_token) throw new Error("TikTok ainda não está conectado. Use o botão Conectar TikTok.");
-  if (data.expires_at && new Date(data.expires_at).getTime() > Date.now() + 10 * 60 * 1000) return data.access_token;
+async function getTikTokToken() {
+  const store = getStore({ name: "tiktok-auth", consistency: "strong" });
+  const data = await store.get("main-account", { type: "json" });
+  if (!data?.refresh_token) throw new Error("TikTok ainda não está conectado. Clique em Conectar TikTok e autorize a conta.");
+  const expiresAt = typeof data.expires_at === "number" ? data.expires_at : new Date(data.expires_at || 0).getTime();
+  if (data.access_token && expiresAt > Date.now() + 10 * 60 * 1000) return data.access_token;
   const form = new URLSearchParams({ client_key: process.env.TIKTOK_CLIENT_KEY || "", client_secret: process.env.TIKTOK_CLIENT_SECRET || "", grant_type: "refresh_token", refresh_token: data.refresh_token });
   const r = await fetch(`${TT}/oauth/token/`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache" }, body: form });
   const j = await r.json();
   if (!r.ok || !j.access_token) throw new Error(`Não foi possível renovar o TikTok: ${j.error_description || j.error || "erro desconhecido"}`);
-  await sb.from("social_integrations").update({ access_token: j.access_token, refresh_token: j.refresh_token || data.refresh_token, expires_at: new Date(Date.now() + Number(j.expires_in || 86400) * 1000).toISOString(), scopes: j.scope || data.scopes, updated_at: new Date().toISOString() }).eq("provider", "tiktok");
+  const updated = {
+    ...data,
+    access_token: j.access_token,
+    refresh_token: j.refresh_token || data.refresh_token,
+    expires_at: Date.now() + Number(j.expires_in || 86400) * 1000,
+    refresh_expires_at: j.refresh_expires_in ? Date.now() + Number(j.refresh_expires_in) * 1000 : data.refresh_expires_at,
+    scope: j.scope || data.scope,
+    updated_at: new Date().toISOString()
+  };
+  await store.setJSON("main-account", updated);
   return j.access_token;
 }
 
 async function publishTikTok(sb, body) {
-  const token = await getTikTokToken(sb);
+  const token = await getTikTokToken();
   const creatorR = await fetch(`${TT}/post/publish/creator_info/query/`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } });
   const creator = await creatorR.json();
   if (!creatorR.ok || creator?.error?.code !== "ok") throw new Error(`TikTok creator_info: ${creator?.error?.message || JSON.stringify(creator)}`);

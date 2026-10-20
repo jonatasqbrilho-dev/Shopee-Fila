@@ -6,6 +6,11 @@
   node_bundler = "esbuild"
 
 [[redirects]]
+  from = "/shopee-video"
+  to = "/shopee-video.html"
+  status = 200
+
+[[redirects]]
   from = "/buscar-video"
   to = "/buscar-video.html"
   status = 200

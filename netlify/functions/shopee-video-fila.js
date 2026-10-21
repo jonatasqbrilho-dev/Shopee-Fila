@@ -33,7 +33,7 @@ export default async (req) => {
       product_name: name.slice(0, 300),
       product_url: String(body.product_url || "").trim() || null,
       video_url: String(body.video_url || "").trim() || null,
-      caption: String(body.caption || "").trim().slice(0, 2200),
+      caption: String(body.caption || "").trim().slice(0, 150),
       scheduled_date: date,
       position: (countRows || []).length + 1,
       status: "pendente",
@@ -47,7 +47,7 @@ export default async (req) => {
   if (body.acao === "atualizar") {
     const id = String(body.id || "");
     const patch = { updated_at: now };
-    if (typeof body.caption === "string") patch.caption = body.caption.slice(0, 2200);
+    if (typeof body.caption === "string") patch.caption = body.caption.slice(0, 150);
     if (typeof body.video_url === "string") patch.video_url = body.video_url.trim() || null;
     if (typeof body.product_url === "string") patch.product_url = body.product_url.trim() || null;
     if (typeof body.product_name === "string" && body.product_name.trim()) patch.product_name = body.product_name.trim().slice(0, 300);

@@ -36,22 +36,47 @@ async function gemini(prompt) {
 }
 async function iaJson(prompt){for(const chamar of [groq,gemini]){try{return await chamar(prompt)}catch(e){console.error("IA:",e.message)}}throw new Error("IA indisponível");}
 
+const limitarLegenda=texto=>{let s=String(texto||"").replace(/\s+/g," ").trim();if(s.length<=150)return s;return s.slice(0,150).replace(/\s+\S*$/," ").trim();};
+const limparLegendaVendas=texto=>String(texto||"").replace(/\b(?:\d+[.,]?\d*)\s*(?:mil|milhares|k)?\s*(?:unidades?|produtos?|vendas?|compradores?|clientes?)\b/gi,"").replace(/\b(?:mais vendido|mais vendidos|campe[aã]o de vendas|recorde de vendas|viral|sucesso de vendas|top vendas|ranking|ranking de vendas)\b/gi,"").replace(/\s{2,}/g," ").replace(/\s+([,.!?])/g,"$1").trim();
+
 export async function avaliar(p) {
-  const prompt=`Você avalia produtos da Shopee Brasil para divulgação como afiliado. Responda SOMENTE um JSON válido com os campos: {"nota": inteiro de 0 a 100, "motivo": "justificativa curta da nota", "legenda": "legenda pronta para publicar"}.\n\nCrie uma legenda de divulgação fiel ao anúncio: comece com um gancho curto, use 1 a 3 emojis, destaque somente benefícios/usos comprovados pelo nome e pelos dados do produto e termine com uma chamada natural para conferir o produto no link. NÃO invente funções, materiais, qualidade, resultados, medidas, compatibilidade, certificações, marca, variação, desconto ou qualquer característica que não esteja comprovada. A legenda deve deixar claro qual é o produto e não pode promover outro item, acessório ou produto semelhante.\n\nREGRA DE RELEVÂNCIA SHOPEE: o conteúdo deve corresponder exatamente ao produto vinculado. Não trate produto parecido como se fosse o mesmo. Respeite marca, modelo, cor, tamanho, capacidade, voltagem, fragrância, sabor, material, acabamento, quantidade e composição quando essas informações estiverem disponíveis. Se for kit, deixe a quantidade/composição clara somente quando constar nos dados.\n\nNÃO inclua preço, valor em reais, porcentagem de desconto ou promessa de promoção. Inclua de 8 a 12 hashtags relevantes no final da própria legenda, separadas por espaços, sempre relacionadas ao produto e ao uso real. Evite hashtags que indiquem características não comprovadas. Escreva em português brasileiro, com texto natural e sem exageros.\n\nProduto: ${JSON.stringify(p)}`;
-  const r=await iaJson(prompt); const nota=Math.round(Number(r.nota)); if(!Number.isFinite(nota)) throw new Error("IA sem nota válida"); return {...r,nota:Math.min(100,Math.max(0,nota))};
+  const prompt=`Você avalia produtos da Shopee Brasil para divulgação como afiliado. Responda SOMENTE um JSON válido com os campos: {"nota": inteiro de 0 a 100, "motivo": "justificativa curta da nota", "legenda": "legenda pronta para publicar"}.
+
+A legenda deve fazer a pessoa entender rapidamente O PRODUTO. O público quer saber o que é, para que serve, como é usado, suas principais características e benefícios reais. NÃO transforme a legenda em propaganda de popularidade.
+
+NÃO fale sobre quantidade de vendas, número de compradores, ranking, "mais vendido", "10 mil vendidos", "20 mil vendidos", tendência de vendas, sucesso de vendas ou qualquer métrica comercial. Esses dados podem ser usados internamente para selecionar produtos, mas NUNCA devem aparecer na legenda.
+
+Crie uma legenda curta e natural: apresente o produto, destaque somente benefícios/usos comprovados pelo nome e pelos dados do produto e termine com uma chamada natural para conferir o produto no link. Use palavras-chave relevantes que uma pessoa realmente pesquisaria para encontrar esse produto. NÃO invente funções, materiais, qualidade, resultados, medidas, compatibilidade, certificações, marca, variação, desconto ou qualquer característica que não esteja comprovada. A legenda deve deixar claro qual é o produto e não pode promover outro item, acessório ou produto semelhante.
+
+REGRA DE RELEVÂNCIA SHOPEE: o conteúdo deve corresponder exatamente ao produto vinculado. Não trate produto parecido como se fosse o mesmo. Respeite marca, modelo, cor, tamanho, capacidade, voltagem, fragrância, sabor, material, acabamento, quantidade e composição quando essas informações estiverem disponíveis. Se for kit, deixe a quantidade/composição clara somente quando constar nos dados.
+
+NÃO inclua preço, valor em reais, porcentagem de desconto ou promessa de promoção. Use hashtags específicas e relevantes para o produto e suas características reais. Priorize hashtags que também funcionem como palavras-chave de busca. Use no máximo 3 hashtags quando houver pouco espaço. Escreva em português brasileiro, com texto natural e sem exageros.
+
+LIMITE OBRIGATÓRIO: a legenda completa, incluindo espaços, emojis, pontuação e hashtags, deve ter NO MÁXIMO 150 CARACTERES. Conte os caracteres antes de responder. Se ultrapassar 150, encurte até ficar com 150 ou menos. Não entregue texto acima desse limite.
+
+Produto: ${JSON.stringify(p)}`;
+  const r=await iaJson(prompt); const nota=Math.round(Number(r.nota)); if(!Number.isFinite(nota)) throw new Error("IA sem nota válida");
+  const legenda=limitarLegenda(limparLegendaVendas(r.legenda));
+  if(!legenda) throw new Error("IA sem legenda válida");
+  return {...r,nota:Math.min(100,Math.max(0,nota)),legenda};
 }
 
 const limitarPrompt=texto=>{let s=String(texto||"");if(s.length<=850)return s;return s.slice(0,850).replace(/\s+\S*$/," ").trim();};
 const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,"").replace(/\b\d+[.,]\d{2}\s?(?:reais)?\b/gi,"").replace(/\b(?:por|de|a partir de)\s+\d+(?:[.,]\d{2})?\s?(?:reais|R\$)?\b/gi,"").replace(/\s{2,}/g," ").trim();
+const removerMetricasVendas=texto=>String(texto||"").replace(/\b(?:\d+[.,]?\d*)\s*(?:mil|milhares|k)?\s*(?:unidades?|produtos?|vendas?|compradores?|clientes?)\b/gi,"").replace(/\b(?:mais vendido|mais vendidos|campe[aã]o de vendas|recorde de vendas|viral|sucesso de vendas|top vendas|ranking|ranking de vendas)\b/gi,"").replace(/\s{2,}/g," ").trim();
 
 export async function gerarConteudo(p) {
-  const prompt=`Você é um especialista em criação de PROMPTS para vídeos de produtos da Shopee Brasil. Sua tarefa é gerar UM único prompt de direção para uma IA de vídeo. O objetivo é aumentar atenção, retenção, desejo e intenção de compra, sem inventar informações.
+  const prompt=`Você é um especialista em criação de PROMPTS para vídeos de produtos da Shopee Brasil. Sua tarefa é gerar UM único prompt de direção para uma IA de vídeo. O objetivo é aumentar atenção, retenção, desejo e intenção de compra apresentando INFORMAÇÕES REAIS DO PRODUTO, sem inventar informações.
+
+REGRA PRINCIPAL: quem assiste ao vídeo quer conhecer o produto, não saber quantas unidades foram vendidas. Dados de vendas, popularidade, ranking ou quantidade de compradores podem ser usados SOMENTE internamente para escolher o produto. Eles NÃO podem aparecer no prompt, na narração, no texto da tela ou no vídeo.
+
+O vídeo deve responder naturalmente: O que é este produto? Para que serve? Como é usado? Quais são suas principais características? Que detalhes fazem diferença? Qual benefício prático é comprovado pelos dados? Sempre priorize demonstração visual e informação útil.
 
 REGRAS DE FORMATO: vídeo vertical 9:16, duração entre 20 e 30 segundos, preferencialmente cerca de 25 segundos, ritmo dinâmico e profissional, usando prioritariamente as IMAGENS REAIS do anúncio como referência do produto.
 
 IMPORTANTE: NÃO crie roteiro por segundos, não divida o vídeo em intervalos como 0-3s, 3-7s etc. NÃO determine uma sequência obrigatória de cenas. NÃO diga à IA exatamente o que fazer em cada segundo. O prompt deve apenas fornecer as regras, objetivos, características do produto e restrições. A IA DE VÍDEO deve decidir autonomamente as cenas, enquadramentos, movimentos de câmera, transições, cortes, timing e forma de apresentar o produto.
 
-DIREÇÃO CRIATIVA: crie um vídeo atraente e com potencial de conversão, mantendo o produto como protagonista. Valorize visualmente o produto, destaque seus benefícios e usos reais quando comprovados, gere desejo e sensação de praticidade e mantenha ritmo adequado para conteúdo curto. A IA de vídeo pode escolher livremente a melhor composição visual e narrativa, desde que respeite todas as regras abaixo.
+DIREÇÃO CRIATIVA: crie um vídeo atraente e com potencial de conversão, mantendo o produto como protagonista. Mostre visualmente aparência, detalhes, uso, funcionamento e benefícios reais quando comprovados. Se for roupa, valorize caimento, modelagem, frente, costas e detalhes visíveis. Se for produto doméstico, mostre o uso real. Se for eletrônico, mostre funções comprovadas. Se for acessório, mostre como fica em uso. Não invente demonstrações que o produto não pode realizar.
 
 FIDELIDADE ABSOLUTA AO PRODUTO:
 - Apresente EXATAMENTE o produto vinculado ao anúncio.
@@ -63,16 +88,16 @@ FIDELIDADE ABSOLUTA AO PRODUTO:
 - Não adicione produtos concorrentes ou itens que possam ser confundidos com produtos vendidos no anúncio.
 - Se for kit ou conjunto, respeite exatamente a composição indicada.
 
-TEXTO E PROMESSAS: qualquer texto na tela deve ser mínimo, legível e baseado somente em informações comprovadas. Não faça promessas exageradas, resultados garantidos, escassez falsa ou afirmações não comprovadas.
+TEXTO, NARRAÇÃO E PROMESSAS: qualquer texto ou fala deve ser baseado somente nas informações comprovadas do produto. A linguagem deve ser natural, brasileira e informativa. Não use frases sobre quantidade de vendas, número de compradores, popularidade, ranking, "mais vendido", "10 mil vendidos", "20 mil vendidos", tendência de vendas ou sucesso de vendas. Não faça promessas exageradas, resultados garantidos, escassez falsa ou afirmações não comprovadas.
 
 PREÇO: NÃO mostrar, escrever, falar ou mencionar preço, valor em reais, desconto, porcentagem de desconto ou promoção de preço.
 
-O resultado deve ser adequado para Shopee Video, com foco no produto real e em seus benefícios comprovados. Não gere roteiro, storyboard, narração, legenda, hashtags ou explicações. Gere SOMENTE JSON válido no formato {"video_prompt":"..."}. O campo video_prompt deve ter no máximo 850 caracteres, contando espaços. Escreva em português brasileiro.
+O resultado deve ser adequado para Shopee Video, com foco no produto real, suas características, utilização e benefícios comprovados. Não gere roteiro, storyboard, narração, legenda, hashtags ou explicações. Gere SOMENTE JSON válido no formato {"video_prompt":"..."}. O campo video_prompt deve ter no máximo 850 caracteres, contando espaços. Escreva em português brasileiro.
 
-Dados reais do produto: ${JSON.stringify({nome:p.nome,vendas:p.vendas,avaliacao:p.avaliacao,motivo:p.motivo,imagem:p.imagem})}`;
+Dados reais do produto: ${JSON.stringify({nome:p.nome,avaliacao:p.avaliacao,motivo:p.motivo,imagem:p.imagem})}`;
   const r=await iaJson(prompt);
   const texto=typeof r === "string" ? r : (r.video_prompt || r.prompt || "");
-  const video_prompt=limitarPrompt(removerPreco(texto));
+  const video_prompt=limitarPrompt(removerMetricasVendas(removerPreco(texto)));
   if(!video_prompt) throw new Error("A IA não retornou um prompt válido. Tente novamente.");
   const a=await avaliar(p);
   if(!a?.legenda || !String(a.legenda).trim()) throw new Error("A IA não retornou uma legenda válida. Tente novamente.");

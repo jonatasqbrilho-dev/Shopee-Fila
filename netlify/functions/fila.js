@@ -1,4 +1,4 @@
-import { db, json, autorizado, shopee, gerarConteudo } from "../lib.js";
+import { db, json, autorizado, shopee, gerarConteudo, pesquisarEstrategia } from "../lib.js";
 
 const escGql=s=>String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"');
 const platformSub=(p,k)=>`${k}${String(p.item_id).replace(/\D/g,"").slice(-12)}`;
@@ -72,6 +72,28 @@ export default async(req)=>{
     const limpos=(data||[]).map(p=>({...p,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[]}));return json(limpos);
   }
   const b=await req.json();
+
+  if (b.acao === "pesquisar_estrategia") {
+    const { data: p, error } = await sb.from("produtos").select("*").eq("id", b.id).single();
+    if (error || !p) return json({ erro: error?.message || "Produto não encontrado" }, 404);
+    try {
+      const estrategia = await pesquisarEstrategia(p);
+      const prompt = estrategia.prompt_video;
+      const { error: saveError } = await sb.from("produtos").update({
+        video_estrategia: estrategia,
+        video_pesquisado_em: estrategia.pesquisado_em,
+        video_prompt: prompt,
+        atualizado_em: new Date().toISOString()
+      }).eq("id", b.id);
+      if (saveError) return json({ erro: "Pesquisa concluída, mas não foi possível salvar: " + saveError.message }, 500);
+      return json({ ok: true, estrategia });
+    } catch (e) { return json({ erro: e.message || "Falha na pesquisa" }, 500); }
+  }
+  if (b.acao === "obter_estrategia") {
+    const { data: p, error } = await sb.from("produtos").select("id,nome,video_estrategia,video_pesquisado_em,video_prompt").eq("id", b.id).single();
+    if (error || !p) return json({ erro: error?.message || "Produto não encontrado" }, 404);
+    return json({ ok: true, produto: p });
+  }
   if(b.acao==="mpt_status"){try{const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);return json({ok:true,...await consultarMpt(p,sb)});}catch(e){return json({erro:e.message},500)}}
   if(b.acao==="gerar_video_mpt"){try{const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);return json({ok:true,...await gerarVideoMpt(p,sb)});}catch(e){return json({erro:e.message},500)}}
   if(b.acao==="gerar_conteudo"){

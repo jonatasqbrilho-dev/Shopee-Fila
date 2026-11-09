@@ -155,7 +155,7 @@ async function pesquisarWebProduto(nome, categoria) {
       const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaResearch/1.0)", "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.7" } });
       if (!r.ok) continue;
       const html = await r.text();
-      const snippets = [...html.matchAll(/<a\\b([^>]*)>([\\s\\S]*?)<\\/a>/gi)]
+      const snippets = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)]
         .filter(m => /result__a/.test(m[1]))
         .map(m => {
           const h = m[1].match(/href=["']([^"']+)["']/i)?.[1] || "";
@@ -164,9 +164,9 @@ async function pesquisarWebProduto(nome, categoria) {
           try { const u = new URL(link); const real = u.searchParams.get("uddg"); if (real) link = real; } catch {}
           const title = stripTags(m[2]);
           const after = html.slice((m.index || 0) + m[0].length, (m.index || 0) + m[0].length + 1800);
-          const sn = after.match(/result__snippet[^>]*>([\\s\\S]*?)<\\/[^>]+>/i)?.[1] || "";
+          const sn = after.match(/result__snippet[^>]*>([\s\S]*?)<\/[^>]+>/i)?.[1] || "";
           return { title, url: link, snippet: stripTags(sn), query: q };
-        }).filter(x => x.title && /^https?:\\/\\//i.test(x.url));
+        }).filter(x => x.title && /^https?:\/\//i.test(x.url));
       encontrados.push(...snippets);
     } catch (e) { console.warn("Pesquisa web:", e.message); }
   }

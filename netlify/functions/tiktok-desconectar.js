@@ -1,11 +1,11 @@
 import { getStore } from "@netlify/blobs";
-import { autorizado, json } from "../lib.js";
+import { autorizado } from "../lib.js";
 
 export default async function handler(req) {
-  if (!autorizado(req)) return json({ erro: "Acesso não autorizado." }, 401);
-  if (req.method !== "POST") return json({ erro: "Use POST para desconectar o TikTok." }, 405);
+  if (!autorizado(req)) return new Response(JSON.stringify({ erro: "Acesso não autorizado." }), { status: 401, headers: { "content-type": "application/json" } });
+  if (req.method !== "POST") return new Response(JSON.stringify({ erro: "Use POST para desconectar o TikTok." }), { status: 405, headers: { "content-type": "application/json" } });
 
   const store = getStore({ name: "tiktok-auth", consistency: "strong" });
   await store.delete("main-account");
-  return json({ ok: true }, 200, { "cache-control": "no-store" });
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 }

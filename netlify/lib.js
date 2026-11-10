@@ -336,21 +336,37 @@ async function analisarImagemDiretor(p) {
     if (tamanho > 4 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
     const bytes = Buffer.from(await resposta.arrayBuffer());
     if (bytes.length > 4 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
-    const modelo = await modeloGeminiDiretor();
     const promptImagem = "Analise visualmente a imagem de anúncio de um produto para um sistema de criação de vídeos comerciais. Retorne SOMENTE JSON válido com: {\"tipo_produto_aparente\":\"...\",\"fatos_visiveis\":[\"...\"],\"cor_aparente\":\"... ou desconhecida\",\"materiais_visiveis\":[\"...\"],\"componentes_visiveis\":[\"...\"],\"uso_que_pode_ser_demonstrado\":[\"...\"],\"lacunas\":[\"...\"],\"alertas_fidelidade\":[\"...\"]}. Descreva somente o que é claramente visível. Não deduza material, tamanho, qualidade, capacidade, função ou benefício apenas pela aparência. Se houver texto na imagem, transcreva somente o que estiver legível e identifique como texto do anúncio, não como verificação independente. Se a imagem tiver vários itens, diferencie o produto principal dos acessórios. Nunca invente.";
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + modelo + ":generateContent?key=" + process.env.GEMINI_API_KEY, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptImagem }, { inlineData: { mimeType: tipo, data: bytes.toString("base64") } }] }],
-        generationConfig: { responseMimeType: "application/json", maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } }
-      }),
-      signal: AbortSignal.timeout(14000)
-    });
-    const j = await r.json();
-    const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\n");
-    if (!r.ok || !texto) throw new Error("Gemini Vision HTTP " + r.status + ": " + JSON.stringify(j).slice(0, 350));
-    return { status: "analisada", ...lerJson(texto) };
+    // O Gemini pode devolver 429/503 temporariamente. Tenta novamente e alterna
+    // para o modelo Flash estável antes de desistir da análise visual.
+    const modelos = [...new Set([await modeloGeminiDiretor(), await modeloGemini()])];
+    const erros = [];
+    for (const modelo of modelos) {
+      for (let tentativa = 1; tentativa <= 2; tentativa++) {
+        try {
+          const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + modelo + ":generateContent?key=" + process.env.GEMINI_API_KEY, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: promptImagem }, { inlineData: { mimeType: tipo, data: bytes.toString("base64") } }] }],
+              generationConfig: { responseMimeType: "application/json", maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } }
+            }),
+            signal: AbortSignal.timeout(18000)
+          });
+          const j = await r.json().catch(() => ({}));
+          const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\n");
+          if (r.ok && texto) return { status: "analisada", modelo, ...lerJson(texto) };
+          const detalhe = "Gemini Vision " + modelo + " HTTP " + r.status + ": " + JSON.stringify(j).slice(0, 300);
+          erros.push(detalhe);
+          if (![429, 500, 502, 503, 504].includes(r.status)) throw new Error(detalhe);
+        } catch (e) {
+          erros.push(e.message);
+          if (!/HTTP (429|500|502|503|504)|timed out|abort/i.test(e.message)) throw e;
+        }
+        if (tentativa < 2) await new Promise(resolve => setTimeout(resolve, 1200 * tentativa));
+      }
+    }
+    throw new Error(erros.slice(-4).join(" | ") || "Modelos de visão indisponíveis.");
   } catch (e) {
     console.warn("Análise da imagem do Diretor IA:", e.message);
     return { status: "indisponivel", fatos_visiveis: [], lacunas: ["Não foi possível analisar a imagem: " + e.message] };
@@ -422,9 +438,9 @@ export async function pesquisarEstrategia(p) {
     "HISTÓRICO DO PRODUTO: " + historicoTexto,
     "MEMÓRIA DA CATEGORIA " + categoria + ": " + memoriaTexto,
     "FONTES E REFERÊNCIAS PÚBLICAS: " + JSON.stringify(fontes),
-    "ETAPA 1 — VERDADE DO PRODUTO: separe mentalmente fatos confirmados, fatos visíveis na imagem e lacunas. Use os dados do anúncio e a análise visual para fidelidade. Pesquisa web serve apenas para inspiração criativa, nunca como prova de atributos do produto. Não invente preço, desconto, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios.",
+    "ETAPA 1 — VERDADE DO PRODUTO: separe mentalmente fatos confirmados no anúncio, fatos visíveis na imagem e lacunas. Pesquisa web serve apenas para inspiração criativa, nunca como prova de atributos. O benefício principal deve descrever uma utilidade diretamente sustentada por uma característica confirmada; não transforme presença de bolso em promessa de segurança, nem forro em promessa de sustentação, conforto ou desempenho. Se não houver benefício comprovável, descreva objetivamente o que o produto oferece, sem inventar uma vantagem. Não invente preço, desconto, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios. Alegações promocionais no título (como zero transparência, à prova d'água, antialérgico, compressão ou durabilidade) não são fatos verificados só por aparecerem no anúncio.",
     "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
-    "ETAPA 3 — ROTEIRO: escolha uma mensagem central e um público provável. Comece com ação visual imediatamente, sem logotipo ou introdução longa. Demonstre o produto em uso quando isso for possível e seguro. Trate no máximo uma objeção. Feche com CTA natural: conferir o produto no link/Shopee. Não simule depoimento ou experiência pessoal que não aconteceu.",
+    "ETAPA 3 — ROTEIRO: escolha uma mensagem central e um público provável sem estereótipos. Comece com o produto visível e uma ação que desperte curiosidade nos primeiros 2 segundos; evite ganchos genéricos como 'olha esse produto' quando houver detalhe específico confirmado. Demonstre uma única característica real em ação quando for possível e seguro. Trate no máximo uma objeção, sem criar medo ou alegar solução não comprovada. A fala deve soar espontânea, específica, curta e caber naturalmente em 10 segundos (idealmente 12–18 palavras). Feche com CTA natural para conferir o produto no link/Shopee. Não simule depoimento ou experiência pessoal que não aconteceu.",
     "ETAPA 4 — VÍDEO ÚNICO PARA GOOGLE FLOW: retorne OBRIGATORIAMENTE apenas UM vídeo, UM clipe e UM prompt_flow, com duração EXATA de 10 segundos, formato vertical 9:16. Não divida em cenas, partes ou clipes. Em 10 segundos, apresente o produto e convença quem está assistindo a clicar e comprar: 0–2s gancho visual com produto já visível; 2–6s demonstração rápida do principal uso/benefício confirmado; 6–10s recomendação natural e CTA direto para clicar no link e comprar. Tudo deve acontecer em uma única tomada contínua, com movimento de câmera suave e ação realista. Escolha livremente o melhor meio de apresentação para o produto: modelo/apresentador falando para a câmera, mãos demonstrando, produto em uso ou composição visual sem pessoa. A fala deve ser curta, convincente, natural e caber em 10 segundos, em português brasileiro, sem parecer leitura ou locução acelerada. O prompt_flow deve ser completo e pronto para colar no Flow, contendo produto exato, cenário, apresentador quando adequado, ação contínua, câmera, luz, fala, texto na tela, áudio e restrições de fidelidade. Não usar cortes, transições ou montagem de vários takes.",
     "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente a peça anunciada, sem adicionar roupa por cima nem alterar cor, corte ou modelo. Em 10 segundos, use uma única ação simples e realista: apresentar-se à câmera, mostrar o conjunto e fazer um movimento leve adequado. Não tente provar ausência de transparência com a mão, alongamento, agachamento ou teste visual; não afirme que o tecido não fica transparente, pois isso não pode ser comprovado por uma imagem estática. Só demonstre bolso se ele estiver visível/confirmado. Nunca levantar, puxar ou expor a roupa. A fala deve destacar somente elementos confirmados, como short, bolso e top com forro duplo quando constarem no anúncio.",
     "CONTINUIDADE: crie um bloco compacto com identidade visual da pessoa (se houver), roupa igual à referência, cenário, iluminação e câmera. Como existe apenas um vídeo contínuo, não descreva vários clipes nem repita instruções por clipe. Se uma pessoa não acrescentar valor, escolha mãos, demonstração ou produto em destaque.",

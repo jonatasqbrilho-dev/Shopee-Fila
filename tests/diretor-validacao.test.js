@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DURACAO_PADRAO_DIRETOR, LIMITE_FALA_DIRETOR, palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade } from "../netlify/diretor-validacao.js";
+import { DURACAO_PADRAO_DIRETOR, LIMITE_FALA_DIRETOR, extrairQuantidadeKit, palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade } from "../netlify/diretor-validacao.js";
 
 test("extrai palavra-chave apenas do nome do produto", () => {
   assert.equal(palavraChaveProduto("Kit de 3 Potes Herméticos para Cozinha"), "potes herméticos cozinha");
@@ -50,4 +50,12 @@ test("Diretor IA usa vídeo padrão de 10 segundos e fala curta para esse tempo"
   assert.equal(DURACAO_PADRAO_DIRETOR, 10);
   assert.equal(LIMITE_FALA_DIRETOR, 22);
   assert.ok(palavras("Regata gola boba, soltinha e versátil. Confira no link!").length <= LIMITE_FALA_DIRETOR);
+});
+
+
+test("identifica quantidade de kits somente quando declarada no anúncio", () => {
+  assert.equal(extrairQuantidadeKit("KIT 2 Blusa Regata Feminina", "", "", ""), 2);
+  assert.equal(extrairQuantidadeKit("Kit de 3 Potes Herméticos"), 3);
+  assert.equal(extrairQuantidadeKit("Blusa Regata Feminina", "Tecido suplex", "", ""), null);
+  assert.equal(extrairQuantidadeKit("Conjunto feminino", "Duas modelos na foto"), null);
 });

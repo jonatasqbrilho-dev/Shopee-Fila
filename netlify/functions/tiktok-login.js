@@ -1,12 +1,16 @@
 import crypto from "node:crypto";
+import { autorizado, json } from "../lib.js";
 
 const REDIRECT_URI = "https://shopeefila.netlify.app/tiktok/callback";
 const AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/";
 
-export default async function handler() {
+export default async function handler(req) {
+  if (!autorizado(req)) return json({ erro: "Acesso não autorizado. Entre novamente no Shopee Fila." }, 401);
+  if (req.method !== "GET") return json({ erro: "Use GET para iniciar a conexão." }, 405);
+
   const clientKey = process.env.TIKTOK_CLIENT_KEY;
   if (!clientKey || !process.env.TIKTOK_CLIENT_SECRET) {
-    return new Response("TikTok não está configurado no Netlify.", { status: 500 });
+    return json({ erro: "TikTok não está configurado no Netlify." }, 500);
   }
 
   const state = crypto.randomBytes(32).toString("hex");
@@ -18,11 +22,8 @@ export default async function handler() {
     state
   });
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `${AUTH_URL}?${params.toString()}`,
-      "Set-Cookie": `tiktok_oauth_state=${state}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`
-    }
+  return json({ authorization_url: `${AUTH_URL}?${params.toString()}` }, 200, {
+    "set-cookie": `tiktok_oauth_state=${state}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`,
+    "cache-control": "no-store"
   });
 }

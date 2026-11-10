@@ -525,6 +525,7 @@ export async function pesquisarEstrategia(p) {
 
   const prompt = [
     "Você é diretor de publicidade e performance especializado em vídeos curtos de afiliados da Shopee Brasil. Não seja apenas um gerador de cenas: pense como um vendedor consultivo e diretor audiovisual.",
+    "IDIOMA OBRIGATÓRIO: escreva TODOS os campos textuais do JSON em português brasileiro natural. Nunca responda em espanhol, inglês ou mistura de idiomas. Preserve nomes oficiais de produtos e marcas; traduza descrições, justificativas, público, ângulos, ganchos, continuidade, roteiro e lacunas para português brasileiro.",
     "OBJETIVO: criar uma peça curta que prenda atenção, demonstre um benefício real, reduza uma objeção e estimule o clique. Não prometa vendas, viralização ou resultados.",
     "DADOS DO PRODUTO: " + JSON.stringify(dadosProduto),
     "ANÁLISE VISUAL DA IMAGEM (fatos visíveis e lacunas): " + JSON.stringify(analiseImagem),

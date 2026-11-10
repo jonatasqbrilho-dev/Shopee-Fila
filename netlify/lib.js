@@ -176,7 +176,26 @@ async function pesquisarWebProduto(nome, categoria) {
 
 export async function pesquisarEstrategia(p) {
   const nome = String(p.nome || p.productName || "produto").slice(0, 250);
-  const promptCategoria = `Classifique este produto em uma categoria comercial curta, sem inventar características: ${nome}`;
+  // Envia à IA todos os dados que realmente existem no cadastro do produto.
+  // Métricas comerciais ficam fora do briefing criativo.
+  const dadosProduto = {
+    nome,
+    item_id: p.item_id || p.itemId || null,
+    categoria_cadastrada: p.categoria || p.category || null,
+    descricao: p.descricao || p.description || p.detalhes || null,
+    imagem_anuncio: p.imagem || p.imageUrl || null,
+    link_produto: p.link_produto || p.productLink || null,
+    variacao: p.variacao || p.variation || null,
+    marca: p.marca || p.brand || null,
+    modelo: p.modelo || p.model || null,
+    cor: p.cor || p.color || null,
+    quantidade: p.quantidade || p.quantity || null,
+    caracteristicas: p.caracteristicas || p.features || null
+  };
+  for (const k of Object.keys(dadosProduto)) {
+    if (dadosProduto[k] === null || dadosProduto[k] === "") delete dadosProduto[k];
+  }
+  const promptCategoria = `Classifique este produto em uma categoria comercial curta, sem inventar características. Dados: ${JSON.stringify(dadosProduto)}`;
   let categoria = "produto";
   try { const c = await iaJson(`Responda somente JSON: {"categoria":"..."}\\n${promptCategoria}`); categoria = String(c.categoria || categoria).slice(0, 80); } catch {}
 
@@ -196,6 +215,22 @@ export async function pesquisarEstrategia(p) {
   } catch (e) { console.warn("Memória Diretor IA indisponível:", e.message); }
 
   const fontes = await pesquisarWebProduto(nome, categoria);
+  // Recupera também as estratégias anteriores do mesmo produto para variar a abordagem.
+  let historicoProduto = [];
+  try {
+    if (p.id) {
+      const { data, error } = await db().from("diretor_ia_memoria")
+        .select("formato_escolhido,gancho,feedback,observacao,criado_em")
+        .eq("produto_id", p.id)
+        .order("criado_em", { ascending: false })
+        .limit(6);
+      if (error) console.warn("Histórico do produto:", error.message);
+      else historicoProduto = data || [];
+    }
+  } catch (e) { console.warn("Histórico do produto indisponível:", e.message); }
+  const historicoTexto = historicoProduto.length
+    ? JSON.stringify(historicoProduto.map(x => ({ formato: x.formato_escolhido, gancho: x.gancho, avaliacao: x.feedback, observacao: x.observacao })))
+    : "Nenhuma estratégia anterior registrada para este produto.";
   const memoriaTexto = aprendizados.length
     ? JSON.stringify(aprendizados.map(x => ({
         produto: x.produto_nome, formato: x.formato_escolhido, gancho: x.gancho,
@@ -206,7 +241,12 @@ export async function pesquisarEstrategia(p) {
 
   const prompt = `Você é diretor de criação e roteirista especialista em vídeos curtos de produtos para afiliados da Shopee Brasil. Analise o produto e crie uma estratégia de vídeo que pareça conteúdo real de uma criadora/influenciadora, seja convincente, natural e visualmente claro. O objetivo é informar e despertar interesse de compra, sem inventar características.
 
-PRODUTO E FIDELIDADE: use somente informações comprovadas nos dados e nas imagens do anúncio. Preserve exatamente modelo, cor, formato, estampa, marca, quantidade, acessórios e demais detalhes visíveis. O produto anunciado deve ser sempre o protagonista. Não invente materiais, funções, resultados, medidas, benefícios ou acessórios. Não faça afirmações absolutas como "zero transparência", "à prova d'água", "indestrutível", "resultado garantido" ou equivalentes, a menos que isso esteja explicitamente comprovado. Quando uma característica não estiver confirmada, mostre apenas o que é visível e descreva com neutralidade.
+BRIEFING REAL DO PRODUTO (dados recuperados do cadastro): ${JSON.stringify(dadosProduto)}
+INFORMAÇÕES AUSENTES: não interrompa a criação nem dê nota baixa apenas porque o cadastro não informa cor, modelo, quantidade ou detalhes. Crie uma estratégia útil usando o que está confirmado. Quando faltarem detalhes, proponha planos visuais neutros que mostrem o próprio item do anúncio, sem nomear nem afirmar características desconhecidas. Não invente falas específicas sobre tecido, bolso, elasticidade, composição, tamanho, acessórios ou funções. Se o nome for genérico, use uma apresentação visual segura e deixe claro em alertas quais detalhes devem ser conferidos na imagem original antes de gravar.
+NOTA CRIATIVA: avalie a qualidade da ideia e sua adequação ao formato, não a quantidade de campos preenchidos no cadastro. Uma estratégia visual genérica, mas fiel, pode receber nota razoável; não use 10/100 apenas por ausência de dados.
+HISTÓRICO DESTE MESMO PRODUTO: ${historicoTexto}
+APRENDIZADOS DE OUTROS PRODUTOS DA CATEGORIA: ${memoriaTexto}
+PRODUTO E FIDELIDADE: use somente informações comprovadas nos dados fornecidos e no anúncio original. Preserve exatamente modelo, cor, formato, estampa, marca, quantidade, acessórios e demais detalhes que puderem ser confirmados. O produto anunciado deve ser sempre o protagonista. Não invente materiais, funções, resultados, medidas, benefícios ou acessórios. Não faça afirmações absolutas como "zero transparência", "à prova d'água", "indestrutível", "resultado garantido" ou equivalentes, a menos que isso esteja explicitamente comprovado. Quando uma característica não estiver confirmada, mostre apenas o que é visível e descreva com neutralidade.
 
 FORMATO E DURAÇÃO: vídeo vertical 9:16 para TikTok, Reels e Shopee Video. Escolha duração entre 15 e 30 segundos conforme a quantidade de informações que realmente vale demonstrar; prefira 18 a 25 segundos. A duração escolhida deve ser respeitada pelo roteiro e pelo prompt final.
 

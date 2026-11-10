@@ -457,7 +457,8 @@ function nomeCurtoFalado(nome) {
 export async function pesquisarEstrategia(p) {
   const nome = String(p.nome || p.productName || "produto").slice(0, 250);
   const modeloFlow = String(process.env.FLOW_MODELO || "Omni Flash 1.1").slice(0, 80);
-  const limiteClipe = Math.max(1, Math.min(60, Number(process.env.CLIPE_MAX || 15)));
+  const limiteInformado = Number(process.env.CLIPE_MAX || 15);
+  const limiteClipe = Number.isFinite(limiteInformado) ? Math.max(1, Math.min(60, limiteInformado)) : 15;
   if (15 > limiteClipe) throw new Error("A duração de 15 segundos excede CLIPE_MAX configurado para o Flow.");
   const categoria = categoriaDiretor(nome, p.categoria || p.category);
   const dadosProduto = {

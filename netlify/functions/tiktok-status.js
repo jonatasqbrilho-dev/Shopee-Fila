@@ -1,13 +1,13 @@
 import { getStore } from "@netlify/blobs";
-import { autorizado, json } from "../lib.js";
+import { autorizado } from "../lib.js";
 
 export default async function handler(req) {
-  if (!autorizado(req)) return json({ erro: "Acesso não autorizado." }, 401);
-  if (req.method !== "GET") return json({ erro: "Use GET." }, 405);
+  if (!autorizado(req)) return new Response(JSON.stringify({ erro: "Acesso não autorizado." }), { status: 401, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  if (req.method !== "GET") return new Response(JSON.stringify({ erro: "Use GET." }), { status: 405, headers: { "content-type": "application/json" } });
 
   const store = getStore({ name: "tiktok-auth", consistency: "strong" });
   const data = await store.get("main-account", { type: "json" });
-  if (!data) return json({ connected: false }, 200, { "cache-control": "no-store" });
+  if (!data) return new Response(JSON.stringify({ connected: false }), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
   return json({
     connected: true,

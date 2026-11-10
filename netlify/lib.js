@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import { palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade, normalizarTexto } from "./diretor-validacao.js";
+import { DURACAO_PADRAO_DIRETOR, LIMITE_FALA_DIRETOR, palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade, normalizarTexto } from "./diretor-validacao.js";
 
 export const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
 export const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });

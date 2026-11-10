@@ -15,15 +15,21 @@ export async function shopee(query) {
 
 const lerJson = (t) => JSON.parse(String(t).replace(/<think>[\s\S]*?<\/think>/g, "").match(/\{[\s\S]*\}/)?.[0] || "{}");
 let pGroq, pGemini;
-const modeloGroq = () => (pGroq ??= (async () => {
-  if (process.env.GROQ_MODEL) return process.env.GROQ_MODEL;
-  const r = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` } }); const j = await r.json();
-  if (!j.data) throw new Error("Groq modelos: " + JSON.stringify(j).slice(0, 200));
-  const ids = j.data.map(m => m.id).filter(id => !/whisper|tts|guard|embed|compound|orpheus/i.test(id));
-  return [/llama-3\.3-70b/, /gpt-oss-120b/, /llama-4|maverick|scout/, /gpt-oss-20b/, /llama/].map(re => ids.find(id => re.test(id))).find(Boolean) || ids[0];
-})());
+// Prefere modelo menor e evita uma chamada extra à API de listagem de modelos.
+const modeloGroq = () => (pGroq ??= Promise.resolve(process.env.GROQ_MODEL || "openai/gpt-oss-20b"));
 async function groq(prompt) {
-  try { const model = await modeloGroq(); const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method:"POST", headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"}, body:JSON.stringify({model,messages:[{role:"user",content:prompt}]} )}); const j=await r.json(); if(!j.choices) throw new Error("Groq: "+JSON.stringify(j).slice(0,200)); return lerJson(j.choices[0].message.content); } catch(e){pGroq=undefined;throw e;}
+  try {
+    const model = await modeloGroq();
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method:"POST",
+      headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"},
+      body:JSON.stringify({model,messages:[{role:"user",content:prompt}],max_completion_tokens:1400,response_format:{type:"json_object"}}),
+      signal:AbortSignal.timeout(4500)
+    });
+    const j=await r.json();
+    if(!r.ok || !j.choices) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,240));
+    return lerJson(j.choices[0].message.content);
+  } catch(e){pGroq=undefined;throw e;}
 }
 const modeloGemini = () => (pGemini ??= (async () => {
   if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
@@ -32,9 +38,25 @@ const modeloGemini = () => (pGemini ??= (async () => {
   return nomes.filter(n=>/^gemini-\d+(\.\d+)?-flash$/.test(n)).sort((a,b)=>parseFloat(b.split("-")[1])-parseFloat(a.split("-")[1]))[0] || nomes.find(n=>/flash/.test(n)&&!/image|tts|live|embed/.test(n)) || nomes[0];
 })());
 async function gemini(prompt) {
-  try { const model=await modeloGemini(); const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})}),j=await r.json(); if(!j.candidates) throw new Error("Gemini: "+JSON.stringify(j).slice(0,200)); return lerJson(j.candidates[0].content.parts[0].text); } catch(e){pGemini=undefined;throw e;}
+  try {
+    const model=await modeloGemini();
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",maxOutputTokens:1400}}),
+      signal:AbortSignal.timeout(4500)
+    });
+    const j=await r.json();
+    if(!r.ok || !j.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error("Gemini HTTP "+r.status+": "+JSON.stringify(j).slice(0,240));
+    return lerJson(j.candidates[0].content.parts[0].text);
+  } catch(e){pGemini=undefined;throw e;}
 }
-async function iaJson(prompt){for(const chamar of [groq,gemini]){try{return await chamar(prompt)}catch(e){console.error("IA:",e.message)}}throw new Error("IA indisponível");}
+async function iaJson(prompt){
+  const erros=[];
+  for(const [nome,chamar] of [["Groq",groq],["Gemini",gemini]]){
+    try{return await chamar(prompt)}catch(e){erros.push(nome+": "+e.message);console.error("IA:",nome,e.message)}
+  }
+  throw new Error("Os serviços de IA não responderam. "+erros.join(" | "));
+}
 
 const limitarLegenda=texto=>{let s=String(texto||"").replace(/\s+/g," ").trim();if(s.length<=150)return s;return s.slice(0,150).replace(/\s+\S*$/," ").trim();};
 const limparLegendaVendas=texto=>String(texto||"").replace(/\b(?:\d+[.,]?\d*)\s*(?:mil|milhares|k)?\s*(?:unidades?|produtos?|vendas?|compradores?|clientes?)\b/gi,"").replace(/\b(?:mais vendido|mais vendidos|campe[aã]o de vendas|recorde de vendas|viral|sucesso de vendas|top vendas|ranking|ranking de vendas)\b/gi,"").replace(/\s{2,}/g," ").replace(/\s+([,.!?])/g,"$1").trim();
@@ -66,42 +88,26 @@ const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,
 const removerMetricasVendas=texto=>String(texto||"").replace(/\b(?:\d+[.,]?\d*)\s*(?:mil|milhares|k)?\s*(?:unidades?|produtos?|vendas?|compradores?|clientes?)\b/gi,"").replace(/\b(?:mais vendido|mais vendidos|campe[aã]o de vendas|recorde de vendas|viral|sucesso de vendas|top vendas|ranking|ranking de vendas)\b/gi,"").replace(/\s{2,}/g," ").trim();
 
 export async function gerarConteudo(p) {
-  const prompt=`Você é um especialista em criação de PROMPTS para vídeos de produtos da Shopee Brasil. Sua tarefa é gerar UM único prompt de direção para uma IA de vídeo. O objetivo é aumentar atenção, retenção, desejo e intenção de compra apresentando INFORMAÇÕES REAIS DO PRODUTO, sem inventar informações.
+  const prompt=`Você é especialista em conteúdo para afiliados da Shopee Brasil. Crie um prompt curto e fiel para vídeo vertical 9:16 de 20 a 30 segundos, usando as imagens reais do anúncio como referência principal.
 
-REGRA PRINCIPAL: quem assiste ao vídeo quer conhecer o produto, não saber quantas unidades foram vendidas. Dados de vendas, popularidade, ranking ou quantidade de compradores podem ser usados SOMENTE internamente para escolher o produto. Eles NÃO podem aparecer no prompt, na narração, no texto da tela ou no vídeo.
+O vídeo deve explicar visualmente o que é o produto, como é usado e quais características comprovadas merecem destaque. O produto deve ser o protagonista. Preserve exatamente modelo, cor, formato, marca, quantidade, embalagem e acessórios confirmados. Não invente materiais, funções, medidas, compatibilidades, resultados ou benefícios. Se faltarem detalhes, apresente visualmente o item sem afirmar o que não está confirmado. Não mencione preço, desconto, vendas, ranking ou popularidade. Não crie roteiro por segundos, storyboard ou falas; deixe a ferramenta de vídeo decidir a montagem. Use português brasileiro e linguagem natural.
 
-O vídeo deve responder naturalmente: O que é este produto? Para que serve? Como é usado? Quais são suas principais características? Que detalhes fazem diferença? Qual benefício prático é comprovado pelos dados? Sempre priorize demonstração visual e informação útil.
+Retorne SOMENTE JSON válido com este formato:
+{"video_prompt":"prompt de até 850 caracteres","nota":75,"motivo":"avaliação criativa curta","legenda":"legenda para publicar com até 150 caracteres, incluindo hashtags e CTA"}
 
-REGRAS DE FORMATO: vídeo vertical 9:16, duração entre 20 e 30 segundos, preferencialmente cerca de 25 segundos, ritmo dinâmico e profissional, usando prioritariamente as IMAGENS REAIS do anúncio como referência do produto.
+A nota mede adequação criativa, não prevê visualizações ou vendas. A legenda deve identificar o produto e usar somente informações comprovadas. Não ultrapasse os limites de caracteres.
 
-IMPORTANTE: NÃO crie roteiro por segundos, não divida o vídeo em intervalos como 0-3s, 3-7s etc. NÃO determine uma sequência obrigatória de cenas. NÃO diga à IA exatamente o que fazer em cada segundo. O prompt deve apenas fornecer as regras, objetivos, características do produto e restrições. A IA DE VÍDEO deve decidir autonomamente as cenas, enquadramentos, movimentos de câmera, transições, cortes, timing e forma de apresentar o produto.
-
-DIREÇÃO CRIATIVA: crie um vídeo atraente e com potencial de conversão, mantendo o produto como protagonista. Mostre visualmente aparência, detalhes, uso, funcionamento e benefícios reais quando comprovados. Se for roupa, valorize caimento, modelagem, frente, costas e detalhes visíveis. Se for produto doméstico, mostre o uso real. Se for eletrônico, mostre funções comprovadas. Se for acessório, mostre como fica em uso. Não invente demonstrações que o produto não pode realizar.
-
-FIDELIDADE ABSOLUTA AO PRODUTO:
-- Apresente EXATAMENTE o produto vinculado ao anúncio.
-- Use as imagens reais do anúncio como principal referência visual.
-- Preserve fielmente aparência, formato, cor, marca/logo, modelo, tamanho, capacidade, voltagem, embalagem, quantidade, acessórios, materiais e acabamento visíveis ou informados no anúncio.
-- Não substitua por produto parecido, modelo diferente, marca diferente ou outra variação.
-- Não invente funções, especificações, medidas, materiais, resultados, certificações, compatibilidades, acessórios ou benefícios.
-- Não altere o design, formato, cor ou características do produto para deixá-lo mais bonito.
-- Não adicione produtos concorrentes ou itens que possam ser confundidos com produtos vendidos no anúncio.
-- Se for kit ou conjunto, respeite exatamente a composição indicada.
-
-TEXTO, NARRAÇÃO E PROMESSAS: qualquer texto ou fala deve ser baseado somente nas informações comprovadas do produto. A linguagem deve ser natural, brasileira e informativa. Não use frases sobre quantidade de vendas, número de compradores, popularidade, ranking, "mais vendido", "10 mil vendidos", "20 mil vendidos", tendência de vendas ou sucesso de vendas. Não faça promessas exageradas, resultados garantidos, escassez falsa ou afirmações não comprovadas.
-
-PREÇO: NÃO mostrar, escrever, falar ou mencionar preço, valor em reais, desconto, porcentagem de desconto ou promoção de preço.
-
-O resultado deve ser adequado para Shopee Video, com foco no produto real, suas características, utilização e benefícios comprovados. Não gere roteiro, storyboard, narração, legenda, hashtags ou explicações. Gere SOMENTE JSON válido no formato {"video_prompt":"..."}. O campo video_prompt deve ter no máximo 850 caracteres, contando espaços. Escreva em português brasileiro.
-
-Dados reais do produto: ${JSON.stringify({nome:p.nome,avaliacao:p.avaliacao,motivo:p.motivo,imagem:p.imagem})}`;
+Dados do produto: ${JSON.stringify({nome:p.nome,descricao:p.descricao,marca:p.marca,modelo:p.modelo,cor:p.cor,quantidade:p.quantidade,imagem:p.imagem,link_produto:p.link_produto})}`;
   const r=await iaJson(prompt);
   const texto=typeof r === "string" ? r : (r.video_prompt || r.prompt || "");
   const video_prompt=limitarPrompt(removerMetricasVendas(removerPreco(texto)));
   if(!video_prompt) throw new Error("A IA não retornou um prompt válido. Tente novamente.");
-  const a=await avaliar(p);
-  if(!a?.legenda || !String(a.legenda).trim()) throw new Error("A IA não retornou uma legenda válida. Tente novamente.");
-  return {video_prompt,nota:a.nota,motivo:a.motivo,legenda:a.legenda};
+  const notaBruta=Math.round(Number(r.nota));
+  const nota=Number.isFinite(notaBruta)?Math.min(100,Math.max(0,notaBruta)):70;
+  const motivo=String(r.motivo||"Adequação criativa estimada com base nos dados disponíveis do produto.").slice(0,500);
+  const legenda=limitarLegenda(limparLegendaVendas(r.legenda));
+  if(!legenda) throw new Error("A IA não retornou uma legenda válida. Tente novamente.");
+  return {video_prompt,nota,motivo,legenda};
 }
 
 const KW=(process.env.KEYWORDS||"fone bluetooth,organizador de cozinha,luminária led,garrafa térmica,suporte de celular,mini processador").split(",").map(s=>s.trim());

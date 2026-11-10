@@ -118,9 +118,12 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
     const juntar = (campo) => clipesOriginais.map(c => String(c?.[campo] || "").trim()).filter(Boolean).join(" ");
     const falaOriginal = String(primeiro.fala || resposta.narracao || "").trim();
     const nomeCurto = nomeCurtoFalado(produtoNome || resposta.produto_nome || resposta.produto);
-    let fala = falaOriginal
-      ? falaOriginal.replace(new RegExp(String(produtoNome || "").replace(/[.*+?^${}()|[\]\\]/g, "\\let fala = falaOriginal
-      ? falaOriginal.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 30).join(" ")"), "ig"), nomeCurto).replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 30).join(" ")
+    const nomeOriginal = String(produtoNome || "").trim();
+    const falaComNomeCurto = nomeOriginal && falaOriginal.toLowerCase().includes(nomeOriginal.toLowerCase())
+      ? falaOriginal.slice(0, falaOriginal.toLowerCase().indexOf(nomeOriginal.toLowerCase())) + nomeCurto + falaOriginal.slice(falaOriginal.toLowerCase().indexOf(nomeOriginal.toLowerCase()) + nomeOriginal.length)
+      : falaOriginal;
+    let fala = falaComNomeCurto
+      ? falaComNomeCurto.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 30).join(" ")
       : "Olha só esse produto!";
     fala = fala.replace(/sem transparência[^.!?]*/ig, "").replace(/transparência[^.!?]*/ig, "").replace(/conforto total/ig, "praticidade").replace(/\s{2,}/g, " ").trim();
     if (!/\b(link|compre|comprar|garanta|garantir|confira)\b/i.test(fala)) fala = (fala ? fala.replace(/[.!?]+$/, "") + ". " : "") + "Clique no link e confira!";
@@ -157,7 +160,7 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
       prompt_flow: detalhes
     };
     resposta.clipes = [clipeUnico];
-    resposta.duracao_segundos = 10;
+    resposta.duracao_segundos = 15;
     resposta.prompt_video = detalhes;
     resposta.estrutura_cenas = [{
       momento: "0–15s",

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import { DURACAO_PADRAO_DIRETOR, LIMITE_FALA_DIRETOR, palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade, normalizarTexto } from "./diretor-validacao.js";
+import { DURACAO_PADRAO_DIRETOR, LIMITE_FALA_DIRETOR, extrairQuantidadeKit, palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade, normalizarTexto } from "./diretor-validacao.js";
 
 export const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
 export const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });
@@ -161,7 +161,7 @@ async function iaJson(prompt){
 
 // O Diretor IA produz uma estratégia extensa: usa os dois provedores em paralelo,
 // com mais tempo e tokens, e encerra a chamada perdedora assim que uma resposta válida chega.
-async function iaJsonDiretor(prompt, produtoNome = "produto") {
+async function iaJsonDiretor(prompt, produtoNome = "produto", contextoProduto = {}) {
   const controladores = [new AbortController(), new AbortController()];
   const limite = setTimeout(() => controladores.forEach(c => c.abort()), 50000);
   const validar = async (chamar) => {
@@ -192,6 +192,7 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
       "Em uma única tomada fluida: 0–2s produto aparece imediatamente e prende atenção; 2–7s apresente uma característica confirmada com demonstração simples; 7–10s recomendação natural e CTA claro para clicar no link e conferir.",
       "A apresentação deve soar como uma pessoa real recomendando o produto a quem está assistindo: fala natural, simpática, segura, persuasiva e em português brasileiro. A fala deve caber integralmente em 10 segundos, com no máximo 22 palavras e sem acelerar. Na fala, use um NOME CURTO E NATURAL do produto (2 a 4 palavras), nunca leia o título comercial completo do anúncio.",
       "Produto anunciado (identificação visual; não ler o título completo): " + String(produtoNome || resposta.produto_nome || resposta.produto || "produto"),
+      contextoProduto.quantidadeKit ? "QUANTIDADE OBRIGATÓRIA: o anúncio declara um kit com " + contextoProduto.quantidadeKit + " peças. Apresente exatamente essa quantidade; não confunda número de modelos/fotos com quantidade de peças. Se as cores/variações estiverem confirmadas nos dados ou imagem, mostre as variações corretas sem inventar outras." : "",
       "Nome curto obrigatório na fala: " + nomeCurto + ". Nunca pronuncie o título comercial completo.",
       continuidade.pessoa ? "Pessoa/apresentador: " + continuidade.pessoa : "Escolha apresentador, mãos ou demonstração sem pessoa conforme a melhor solução para o produto.",
       continuidade.roupa ? "Roupa: " + continuidade.roupa : "",
@@ -403,7 +404,7 @@ async function analisarImagemDiretor(p) {
     if (tamanho > 4 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
     const bytes = Buffer.from(await resposta.arrayBuffer());
     if (bytes.length > 4 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
-    const promptImagem = "Analise visualmente a imagem de anúncio de um produto para um sistema de criação de vídeos comerciais. Retorne SOMENTE JSON válido com: {\"tipo_produto_aparente\":\"...\",\"fatos_visiveis\":[\"...\"],\"cor_aparente\":\"... ou desconhecida\",\"materiais_visiveis\":[\"...\"],\"componentes_visiveis\":[\"...\"],\"uso_que_pode_ser_demonstrado\":[\"...\"],\"lacunas\":[\"...\"],\"alertas_fidelidade\":[\"...\"]}. Descreva somente o que é claramente visível. Não deduza material, tamanho, qualidade, capacidade, função ou benefício apenas pela aparência. Se houver texto na imagem, transcreva somente o que estiver legível e identifique como texto do anúncio, não como verificação independente. Se a imagem tiver vários itens, diferencie o produto principal dos acessórios. Nunca invente.";
+    const promptImagem = "Analise visualmente a imagem de anúncio de um produto para um sistema de criação de vídeos comerciais. Retorne SOMENTE JSON válido com: {\"tipo_produto_aparente\":\"...\",\"fatos_visiveis\":[\"...\"],\"cor_aparente\":\"... ou desconhecida\",\"materiais_visiveis\":[\"...\"],\"componentes_visiveis\":[\"...\"],\"uso_que_pode_ser_demonstrado\":[\"...\"],\"lacunas\":[\"...\"],\"alertas_fidelidade\":[\"...\"]}. Descreva somente o que é claramente visível. Não deduza material, tamanho, qualidade, capacidade, função ou benefício apenas pela aparência. Se houver texto na imagem, transcreva somente o que estiver legível e identifique como texto do anúncio, não como verificação independente. Diferencie quantidade de produtos de quantidade de pessoas/modelos: duas modelos ou duas fotos da mesma peça não comprovam que o anúncio vende duas unidades. Não deduza que cores mostradas são variações incluídas no kit sem confirmação textual. Se houver vários itens, diferencie produto principal, variações, acessórios e elementos de cenário. Nunca invente.";
     // O Gemini pode devolver 429/503 temporariamente. Tenta novamente e alterna
     // para o modelo Flash estável antes de desistir da análise visual.
     const modelos = [...new Set([await modeloGeminiDiretor(), "gemini-3-flash-preview"])];
@@ -529,6 +530,9 @@ export async function pesquisarEstrategia(p) {
     "OBJETIVO: criar uma peça curta que prenda atenção, demonstre um benefício real, reduza uma objeção e estimule o clique. Não prometa vendas, viralização ou resultados.",
     "DADOS DO PRODUTO: " + JSON.stringify(dadosProduto),
     "ANÁLISE VISUAL DA IMAGEM (fatos visíveis e lacunas): " + JSON.stringify(analiseImagem),
+    "REGRA DE EVIDÊNCIA: características de material, composição, acabamento, caimento, elasticidade, conforto, transparência, durabilidade e benefícios só podem ser afirmadas se estiverem explicitamente descritas nos dados textuais do anúncio ou comprovadas de forma direta. Brilho aparente não comprova tecido acetinado; aparência de caimento não comprova que não aperta ou realça o corpo. Se não houver comprovação, descreva apenas o que se vê, sem transformar aparência em benefício.",
+    "REGRA DE QUANTIDADE E VARIAÇÕES: identifique kits e quantidades pelo título/descrição do anúncio. Se houver KIT 2, o vídeo e os argumentos devem representar duas peças. Use a imagem para identificar cores/modelos visíveis, mas não confunda duas modelos, fotos ou poses com duas unidades do produto. Não omita peças incluídas nem acrescente peças/cores não confirmadas.",
+    "PÚBLICO: descreva interesses e ocasião de uso prováveis com cautela. Não invente faixa etária precisa, gênero exclusivo ou perfil demográfico sem dados confiáveis.",
     "HISTÓRICO DO PRODUTO: " + historicoTexto,
     "MEMÓRIA DA CATEGORIA " + categoria + ": " + memoriaTexto,
     "FONTES E REFERÊNCIAS PÚBLICAS: " + JSON.stringify(fontes),
@@ -576,7 +580,11 @@ export async function pesquisarEstrategia(p) {
     }) + ". Todos os campos devem conter dados reais da análise; não mantenha exemplos genéricos do esquema."
   ].join("\n\n");
 
-  const resultado = await iaJsonDiretor(prompt, nome);
+  const quantidadeKit = extrairQuantidadeKit(nome, dadosProduto.descricao, dadosProduto.caracteristicas, dadosProduto.variacao);
+  const contextoQuantidade = quantidadeKit
+    ? "O título/descrição declara KIT com " + quantidadeKit + " peças. A estratégia e o prompt devem mostrar exatamente " + quantidadeKit + " peças, sem confundir modelos ou fotos com unidades."
+    : "A quantidade de peças não está confirmada; não invente kit, quantidade nem variações incluídas.";
+  const resultado = await iaJsonDiretor(prompt + "\\n\\nQUANTIDADE DO ANÚNCIO: " + contextoQuantidade, nome, { quantidadeKit });
   const clipes = resultado.clipes.map((c, i) => ({
     ...c,
     numero: Number(c.numero || i + 1),

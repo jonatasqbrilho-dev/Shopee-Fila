@@ -111,23 +111,25 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
     if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length) {
       throw new Error("O provedor retornou uma estratégia incompleta ou sem roteiro.");
     }
-    // O Diretor IA entrega um único vídeo de 10 segundos, não uma sequência de clipes.
+    // O Diretor IA entrega um único vídeo de 15 segundos, não uma sequência de clipes.
     const clipesOriginais = resposta.clipes.slice(0, 4);
     const primeiro = clipesOriginais[0] || {};
     const continuidade = resposta.continuidade || {};
     const juntar = (campo) => clipesOriginais.map(c => String(c?.[campo] || "").trim()).filter(Boolean).join(" ");
     const falaOriginal = String(primeiro.fala || resposta.narracao || "").trim();
+    const nomeCurto = nomeCurtoFalado(produtoNome || resposta.produto_nome || resposta.produto);
     let fala = falaOriginal
-      ? falaOriginal.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 17).join(" ")
+      ? falaOriginal.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 30).join(" ")
       : "Olha só esse produto!";
     fala = fala.replace(/sem transparência[^.!?]*/ig, "").replace(/transparência[^.!?]*/ig, "").replace(/conforto total/ig, "praticidade").replace(/\s{2,}/g, " ").trim();
     if (!/\b(link|compre|comprar|garanta|garantir|confira)\b/i.test(fala)) fala = (fala ? fala.replace(/[.!?]+$/, "") + ". " : "") + "Clique no link e confira!";
     const detalhes = [
-      "VÍDEO ÚNICO, CONTÍNUO E COMPLETO — duração EXATA de 10 segundos, formato vertical 9:16.",
+      "VÍDEO ÚNICO, CONTÍNUO E COMPLETO — duração EXATA de 15 segundos, formato vertical 9:16.",
       "Apresente o produto imediatamente no primeiro segundo. Escolha a melhor forma de apresentação para este item: uma pessoa falando diretamente com a câmera, demonstração com as mãos, uso real ou enquadramento do próprio produto. Não force uma modelo quando ela não acrescentar valor.",
-      "Em uma única tomada fluida, sem cortes entre cenas: comece com um gancho visual, demonstre rapidamente o principal benefício ou característica confirmada e termine com uma recomendação convincente e um convite claro para clicar no link e comprar.",
-      "A apresentação deve soar como uma pessoa real recomendando o produto a quem está assistindo: fala natural, simpática, segura, persuasiva e em português brasileiro. A fala deve caber integralmente em 10 segundos, sem locução acelerada.",
-      "Produto anunciado: " + String(produtoNome || resposta.produto_nome || resposta.produto || "produto"),
+      "Em uma única tomada fluida: 0–3s produto aparece imediatamente; 3–9s apresente uma ou duas características confirmadas; 9–15s recomendação natural e CTA claro para clicar no link e conferir/comprar.",
+      "A apresentação deve soar como uma pessoa real recomendando o produto a quem está assistindo: fala natural, simpática, segura, persuasiva e em português brasileiro. A fala deve caber integralmente em 15 segundos, sem locução acelerada. Na fala, use um NOME CURTO E NATURAL do produto (2 a 4 palavras), nunca leia o título comercial completo do anúncio.",
+      "Produto anunciado (identificação visual; não ler o título completo): " + String(produtoNome || resposta.produto_nome || resposta.produto || "produto"),
+      "Nome curto obrigatório na fala: " + nomeCurto + ". Nunca pronuncie o título comercial completo.",
       continuidade.pessoa ? "Pessoa/apresentador: " + continuidade.pessoa : "Escolha apresentador, mãos ou demonstração sem pessoa conforme a melhor solução para o produto.",
       continuidade.roupa ? "Roupa: " + continuidade.roupa : "",
       continuidade.cenario ? "Cenário: " + continuidade.cenario : "",
@@ -144,7 +146,7 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
     ].filter(Boolean).join("\n");
     const clipeUnico = {
       numero: 1,
-      duracao_segundos: 10,
+      duracao_segundos: 15,
       objetivo: "Apresentar, demonstrar e vender o produto em um único vídeo",
       visual: juntar("visual") || primeiro.visual || "Produto em destaque desde o primeiro segundo.",
       acao: juntar("acao") || primeiro.acao || "Apresentação natural do produto, demonstração breve e CTA.",
@@ -157,7 +159,7 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
     resposta.duracao_segundos = 10;
     resposta.prompt_video = detalhes;
     resposta.estrutura_cenas = [{
-      momento: "0–10s",
+      momento: "0–15s",
       visual: clipeUnico.visual,
       objetivo: clipeUnico.objetivo,
       camera: clipeUnico.camera,
@@ -373,6 +375,22 @@ async function analisarImagemDiretor(p) {
   }
 }
 
+function nomeCurtoFalado(nome) {
+  const original = String(nome || "produto").trim();
+  const n = original.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+  if (/\\bmacacao\\b/.test(n)) return /\\bshort\\s+saia\\b/.test(n) ? "macacão short saia" : "macacão";
+  if (/\\bconjunto\\b/.test(n)) return /\\bacademia|fitness|treino\\b/.test(n) ? "conjunto de academia" : "conjunto";
+  if (/\\bvestido\\b/.test(n)) return "vestido";
+  if (/\\blegging\\b/.test(n)) return "legging";
+  if (/\\btop\\b/.test(n)) return "top";
+  if (/\\bshort\\b/.test(n)) return /\\bsaia\\b/.test(n) ? "short saia" : "short";
+  if (/\\bgarrafa\\b/.test(n)) return "garrafa";
+  if (/\\bfone\\b/.test(n)) return "fone";
+  const ignorar = new Set(["feminino","feminina","masculino","masculina","unissex","tecido","liso","lisa","estampado","estampada","novo","nova","premium","original","adulto","adulta","infantil","com","para","de","da","do","e"]);
+  const palavras = original.split(/\\s+/).filter(p => !ignorar.has(p.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")));
+  return palavras.slice(0, 3).join(" ") || "produto";
+}
+
 export async function pesquisarEstrategia(p) {
   const nome = String(p.nome || p.productName || "produto").slice(0, 250);
   const categoria = categoriaDiretor(nome, p.categoria || p.category);
@@ -441,12 +459,12 @@ export async function pesquisarEstrategia(p) {
     "ETAPA 1 — VERDADE DO PRODUTO: separe mentalmente fatos confirmados no anúncio, fatos visíveis na imagem e lacunas. Pesquisa web serve apenas para inspiração criativa, nunca como prova de atributos. O benefício principal deve descrever uma utilidade diretamente sustentada por uma característica confirmada; não transforme presença de bolso em promessa de segurança, nem forro em promessa de sustentação, conforto ou desempenho. Se não houver benefício comprovável, descreva objetivamente o que o produto oferece, sem inventar uma vantagem. Não invente preço, desconto, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios. Alegações promocionais no título (como zero transparência, à prova d'água, antialérgico, compressão ou durabilidade) não são fatos verificados só por aparecerem no anúncio.",
     "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
     "ETAPA 3 — ROTEIRO OBRIGATÓRIO: a fala precisa dizer claramente o NOME DO PRODUTO (use uma versão curta, mas reconhecível, do nome exato do anúncio) e apresentar PELO MENOS DOIS benefícios ou características úteis, reais e confirmados nos dados do anúncio ou claramente visíveis. Não basta dizer apenas 'olha esse produto', 'confira este item' ou mostrar o produto sem identificá-lo. Estruture a fala em português brasileiro: nome do produto + dois benefícios/características confirmados + CTA. Exemplo de estrutura, não copie literalmente: 'Essa [nome do produto] tem [característica/benefício 1] e [característica/benefício 2]. Clique e confira!'. Se não houver dois benefícios comprováveis, cite duas características objetivas confirmadas, sem inventar vantagens. Comece com o produto visível nos primeiros 2 segundos, demonstre ao menos uma característica real em ação quando for possível e seguro. A fala deve soar espontânea, específica e caber naturalmente em 10 segundos; priorize clareza do nome e das duas características em vez de frases genéricas. Não simule depoimento ou experiência pessoal que não aconteceu.",
-    "ETAPA 4 — VÍDEO ÚNICO PARA GOOGLE FLOW: retorne OBRIGATORIAMENTE apenas UM vídeo, UM clipe e UM prompt_flow, com duração EXATA de 10 segundos, formato vertical 9:16. Não divida em cenas, partes ou clipes. Em 10 segundos, apresente o produto e convença quem está assistindo a clicar e comprar: 0–2s gancho visual com produto já visível; 2–6s demonstração rápida do principal uso/benefício confirmado; 6–10s recomendação natural e CTA direto para clicar no link e comprar. Tudo deve acontecer em uma única tomada contínua, com movimento de câmera suave e ação realista. Escolha livremente o melhor meio de apresentação para o produto: modelo/apresentador falando para a câmera, mãos demonstrando, produto em uso ou composição visual sem pessoa. A fala deve ser curta, convincente, natural e caber em 10 segundos, em português brasileiro, sem parecer leitura ou locução acelerada. O prompt_flow deve ser completo e pronto para colar no Flow, contendo produto exato, cenário, apresentador quando adequado, ação contínua, câmera, luz, fala, texto na tela, áudio e restrições de fidelidade. Não usar cortes, transições ou montagem de vários takes.",
-    "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente a peça anunciada, sem adicionar roupa por cima nem alterar cor, corte ou modelo. Em 10 segundos, use uma única ação simples e realista: apresentar-se à câmera, mostrar o conjunto e fazer um movimento leve adequado. Não tente provar ausência de transparência com a mão, alongamento, agachamento ou teste visual; não afirme que o tecido não fica transparente, pois isso não pode ser comprovado por uma imagem estática. Só demonstre bolso se ele estiver visível/confirmado. Nunca levantar, puxar ou expor a roupa. A fala deve destacar somente elementos confirmados, como short, bolso e top com forro duplo quando constarem no anúncio.",
+    "ETAPA 4 — VÍDEO ÚNICO PARA GOOGLE FLOW: retorne apenas UM vídeo, UM clipe e UM prompt_flow, com duração EXATA de 15 segundos, formato vertical 9:16. Não divida em cenas ou partes. Use 0–3s para gancho visual com produto visível; 3–9s para apresentar uma ou duas características confirmadas; 9–15s para recomendação e CTA. Tudo em uma única tomada contínua. Escolha o melhor meio de apresentação. A fala deve ser natural, em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo) e caber em 15 segundos sem acelerar. O prompt_flow deve ser completo e pronto para colar no Flow, contendo produto, cenário, apresentador quando adequado, ação contínua, câmera, luz, fala, texto, áudio e restrições de fidelidade. Sem cortes ou transições.",
+    "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente a peça anunciada, sem adicionar roupa por cima nem alterar cor, corte ou modelo. Em 15 segundos, use ações simples e realistas para apresentar a peça. Não tente provar ausência de transparência com a mão, alongamento, agachamento ou teste visual; não afirme que o tecido não fica transparente. Só demonstre detalhes visíveis/confirmados. Nunca levantar, puxar ou expor a roupa. A fala deve usar nome curto e destacar somente elementos confirmados.",
     "CONTINUIDADE: crie um bloco compacto com identidade visual da pessoa (se houver), roupa igual à referência, cenário, iluminação e câmera. Como existe apenas um vídeo contínuo, não descreva vários clipes nem repita instruções por clipe. Se uma pessoa não acrescentar valor, escolha mãos, demonstração ou produto em destaque.",
     "FIDELIDADE VISUAL: a imagem do anúncio é referência prioritária. Preserve forma, cor, proporções, estampa, marca, embalagem, componentes e quantidade visíveis. Não acrescente acessórios nem invente detalhes. Evite alterações de design, mãos deformadas, contato impossível, movimentos bruscos ou transições que escondam o item. Para roupas, não crie camadas de roupa que escondam a peça anunciada.",
-    "PROMPT FINAL: prompt_video deve conter um único prompt pronto para copiar, em formato 9:16 e duração exata de 10 segundos. Não use a palavra clipes no plural, não crie prompts separados e não divida em tomadas. O vídeo deve ser uma única ação contínua com começo, demonstração e CTA. A FALA É OBRIGATÓRIA e deve ser audível, sincronizada e em português brasileiro: deve pronunciar o nome reconhecível do produto e mencionar pelo menos duas características/benefícios úteis confirmados no anúncio; terminar convidando a clicar no link. Não aceite fala genérica como 'olha esse produto' ou 'confira este item'. Se a fala não disser o nome e duas características reais, a estratégia está incompleta. Use até 20 palavras, sem acelerar. Nunca transforme alegação promocional do título (ex.: zero transparência, alta compressão, à prova d'água) em fato comprovado pela imagem. Não invente teste, resultado ou experiência pessoal. O prompt deve conter produto, melhor forma de apresentação, cenário, ação contínua fisicamente possível, câmera, luz, fala, texto e áudio.",
-    "VALIDAÇÃO: retorne exatamente um clipe com duracao_segundos igual a 10 e apenas um prompt_flow. O vídeo deve ser contínuo, sem cortes, e conter gancho, demonstração e CTA dentro dos mesmos 10 segundos. A fala deve caber no tempo. Nenhuma afirmação pode exceder os dados ou o que está visível. Nota 0–100 mede adequação criativa estimada, não conversão.",
+    "PROMPT FINAL: prompt_video deve conter um único prompt pronto para copiar, em formato 9:16 e duração exata de 15 segundos. A fala deve ser audível, sincronizada e em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo do anúncio), mencionar uma ou duas características reais confirmadas e terminar com CTA. Use até 30 palavras, sem acelerar. Nunca transforme alegação promocional do título em fato comprovado. Não invente teste, resultado ou experiência pessoal. O prompt deve conter produto, apresentação, cenário, ação contínua, câmera, luz, fala, texto e áudio.",
+    "VALIDAÇÃO: retorne exatamente um clipe com duracao_segundos igual a 15 e apenas um prompt_flow. O vídeo deve ser contínuo, sem cortes, e conter gancho, apresentação e CTA dentro dos mesmos 15 segundos. A fala deve usar nome curto e caber no tempo. Nenhuma afirmação pode exceder os dados ou o que está visível. Nota 0–100 mede adequação criativa estimada, não conversão.",
     "RETORNE SOMENTE JSON válido, sem markdown, com este formato: " +
     JSON.stringify({
       categoria: categoria,
@@ -458,10 +476,10 @@ export async function pesquisarEstrategia(p) {
       nota_adequacao: 0,
       justificativa: "...",
       gancho: "...",
-      duracao_segundos: 10,
+      duracao_segundos: 15,
       continuidade: { pessoa: "... ou sem pessoa", roupa: "...", cenario: "...", iluminacao: "...", camera: "..." },
-      clipes: [{ numero: 1, duracao_segundos: 10, objetivo: "apresentar e vender em um único vídeo", visual: "...", acao: "...", camera: "...", fala: "...", texto_tela: "...", prompt_flow: "um único prompt completo para vídeo contínuo de 10 segundos" }],
-      estrutura_cenas: [{ momento: "0–10s", visual: "...", objetivo: "...", camera: "...", acao: "..." }],
+      clipes: [{ numero: 1, duracao_segundos: 15, objetivo: "apresentar e vender em um único vídeo", visual: "...", acao: "...", camera: "...", fala: "...", texto_tela: "...", prompt_flow: "um único prompt completo para vídeo contínuo de 10 segundos" }],
+      estrutura_cenas: [{ momento: "0–15s", visual: "...", objetivo: "...", camera: "...", acao: "..." }],
       narracao: "...",
       textos_tela: ["..."],
       cta: "...",
@@ -480,26 +498,27 @@ export async function pesquisarEstrategia(p) {
     prompt_flow: String(c.prompt_flow || "").trim().replace(/\\\\n/g, "\\n")
   }));
   const duracao = clipes.reduce((s, c) => s + c.duracao_segundos, 0);
-  if (clipes.length !== 1 || duracao !== 10 || Number(resultado.duracao_segundos) !== 10 || clipes.some(c => c.duracao_segundos !== 10 || !c.prompt_flow)) {
+  if (clipes.length !== 1 || duracao !== 15 || Number(resultado.duracao_segundos) !== 15 || clipes.some(c => c.duracao_segundos !== 15 || !c.prompt_flow)) {
     throw new Error("A estratégia retornada não passou na validação dos clipes. Gere novamente.");
   }
-  if (duracao !== 10) throw new Error("O vídeo precisa ter exatamente 10 segundos.");
+  if (duracao !== 15) throw new Error("O vídeo precisa ter exatamente 15 segundos.");
   let promptVideo = String(resultado.prompt_video || "").trim().slice(0, 12000);
   if (categoria === "fitness") {
     const conjuntoShortTop = /conjunto/i.test(nome) && /short/i.test(nome) && /top/i.test(nome) && /forro duplo/i.test(nome);
+    const nomeFalado = nomeCurtoFalado(nome);
     const falaFitness = conjuntoShortTop
       ? "Esse conjunto de academia tem short com bolso e top com forro duplo. Clique no link e confira!"
-      : "Este " + nome.split(/\s+/).slice(0, 5).join(" ") + " tem características para conhecer. Clique no link e confira os detalhes!";
+      : "Esse " + nomeFalado + " merece uma olhada de perto. Confira os detalhes e clique no link!";
     const acaoFitness = conjuntoShortTop
       ? "A modelo já aparece vestindo exatamente o conjunto do anúncio. Em um único movimento natural, olha para a câmera, indica discretamente o bolso do short apenas se ele estiver visível e finaliza sorrindo para a câmera. Não segura bolsa, não faz alongamento, não agacha e não puxa ou levanta a roupa."
       : "Apresentador ou modelo mostra o item exatamente como aparece no anúncio, com um gesto simples e natural, sem inventar teste, função ou benefício.";
     const promptFitness = [
-      "VÍDEO ÚNICO E CONTÍNUO DE EXATOS 10 SEGUNDOS, vertical 9:16, pronto para Google Flow.",
+      "VÍDEO ÚNICO E CONTÍNUO DE EXATOS 15 SEGUNDOS, vertical 9:16, pronto para Google Flow.",
       "Produto: " + nome + ". Use a imagem do anúncio como referência visual principal. Preserve exatamente modelo, cores, corte, formato e componentes; não acrescente peças nem acessórios.",
       conjuntoShortTop
         ? "Apresentação: modelo feminina vestindo somente o conjunto anunciado, sem roupa por cima. Fundo simples de academia, iluminação suave e câmera estabilizada em um movimento lateral discreto. A modelo já começa com o conjunto visível, olha para a câmera, indica o bolso somente se estiver claramente visível e termina olhando para a câmera."
         : "Apresentação: escolha uma pessoa ou demonstração do próprio produto conforme a referência. Cenário limpo, iluminação suave e câmera estabilizada. Mantenha o produto visível durante toda a tomada.",
-      "Ritmo dentro da mesma tomada: 0–2s produto aparece imediatamente; 2–6s apresentação simples da característica confirmada; 6–10s recomendação e CTA. Sem cortes, transições, troca de roupa ou cenário.",
+      "Ritmo dentro da mesma tomada: 0–3s produto aparece imediatamente; 3–9s apresentação simples da característica confirmada; 9–15s recomendação e CTA. Sem cortes, transições, troca de roupa ou cenário.",
       "Fala em português brasileiro, natural e sincronizada: “" + falaFitness + "”",
       "Texto discreto na tela: Confira na Shopee.",
       "Não afirme zero transparência, compressão, sustentação, conforto garantido ou qualquer resultado que não possa ser comprovado. Não faça teste de transparência, alongamento, agachamento ou gesto de puxar a roupa. Não invente tecido, cor, tamanho ou detalhes ausentes do anúncio.",
@@ -508,7 +527,7 @@ export async function pesquisarEstrategia(p) {
     clipes[0] = {
       ...clipes[0],
       numero: 1,
-      duracao_segundos: 10,
+      duracao_segundos: 15,
       objetivo: "Apresentar o produto e convidar à compra em um único vídeo",
       visual: "Produto visível desde o primeiro segundo, com apresentação natural e fiel ao anúncio",
       acao: acaoFitness,
@@ -522,7 +541,7 @@ export async function pesquisarEstrategia(p) {
     resultado.narracao = falaFitness;
     resultado.cta = "Clique no link para conferir e comprar na Shopee.";
     resultado.estrutura_cenas = [{
-      momento: "0–10s",
+      momento: "0–15s",
       visual: "Produto visível desde o primeiro segundo",
       objetivo: "Apresentar a característica confirmada e convidar à compra",
       camera: "Uma única tomada contínua com câmera estabilizada",

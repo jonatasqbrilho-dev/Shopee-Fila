@@ -72,7 +72,7 @@ export default async(req)=>{
     const statusFiltro = url.searchParams.get("status") || "pendente";
     const consulta = sb.from("produtos").select("*");
     const {data,error} = url.searchParams.get("todos")
-      ? await consulta.in("status", ["pendente","aprovado","sem_video","publicado","rejeitado","descartado"]).order("atualizado_em",{ascending:false}).limit(600)
+      ? await consulta.in("status", ["pendente","aprovado","sem_video","publicado","rejeitado","descartado"]).order("atualizado_em",{ascending:false}).limit(1000)
       : await consulta.eq("status",statusFiltro).order("atualizado_em",{ascending:false}).limit(100);
     if(error)return json({erro:error.message},500);
     const limpos=(data||[]).map(p=>({...p,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[]}));return json(limpos);

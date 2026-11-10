@@ -456,6 +456,9 @@ function nomeCurtoFalado(nome) {
 
 export async function pesquisarEstrategia(p) {
   const nome = String(p.nome || p.productName || "produto").slice(0, 250);
+  const modeloFlow = String(process.env.FLOW_MODELO || "Omni Flash 1.1").slice(0, 80);
+  const limiteClipe = Math.max(1, Math.min(60, Number(process.env.CLIPE_MAX || 15)));
+  if (15 > limiteClipe) throw new Error("A duração de 15 segundos excede CLIPE_MAX configurado para o Flow.");
   const categoria = categoriaDiretor(nome, p.categoria || p.category);
   const dadosProduto = {
     nome,
@@ -529,6 +532,7 @@ export async function pesquisarEstrategia(p) {
     "ETAPA 2A — TRÊS GANCHOS PARA TESTE: produza EXATAMENTE três aberturas realmente diferentes, uma de problema e solução, uma de curiosidade e uma de demonstração visual. Cada uma deve ter uma frase curta (máximo 12 palavras) e uma abertura visual executável nos primeiros 2 segundos. Não repita a mesma frase trocando poucas palavras. Não invente características, não use preço, desconto, escassez, número de vendas ou promessas. Retorne em ganchos: [{tipo:'Problema e solução',texto:'...',abertura_visual:'...'},{tipo:'Curiosidade',texto:'...',abertura_visual:'...'},{tipo:'Demonstração',texto:'...',abertura_visual:'...'}]. O vídeo principal continua com 15 segundos; os três ganchos são alternativas de abertura, não três chamadas de IA nem três vídeos completos.",
     "ETAPA 2B — PALAVRA-CHAVE E LEGENDA: escolha uma palavra-chave curta usando somente termos do nome e dos dados confirmados do produto. Gere uma legenda pronta para publicação com no máximo 150 caracteres, incluindo 3 a 5 hashtags específicas. Não inclua preço, valores, desconto, promoção, quantidade de vendas, ranking, avaliações ou promessas absolutas. A legenda deve identificar o produto e convidar a conferir o link.",
     "ETAPA 3A — RETENÇÃO E LIMITES: produto claramente visível desde o primeiro segundo; uma mensagem principal; uma demonstração simples e real; nada de introdução longa. A fala total tem no máximo 30 palavras e deve caber em 15 segundos em ritmo natural. Cada cena/trecho descrito deve conter apenas fatos confirmados. Mantenha exatamente a mesma pessoa, roupa, cenário, iluminação e identidade visual durante todo o vídeo.",
+    "MODELO DE GERAÇÃO CONFIGURADO: " + modeloFlow + ". Duração solicitada: 15 segundos; limite máximo configurado: " + limiteClipe + " segundos. Não altere a duração solicitada.",
     "ETAPA 4 — VÍDEO ÚNICO PARA GOOGLE FLOW: retorne apenas UM vídeo, UM clipe e UM prompt_flow, com duração EXATA de 15 segundos, formato vertical 9:16. Não divida em cenas ou partes. Use 0–3s para gancho visual com produto visível; 3–9s para apresentar uma ou duas características confirmadas; 9–15s para recomendação e CTA. Tudo em uma única tomada contínua. Escolha o melhor meio de apresentação. A fala deve ser natural, em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo) e caber em 15 segundos sem acelerar. O prompt_flow deve ser completo e pronto para colar no Flow, contendo produto, cenário, apresentador quando adequado, ação contínua, câmera, luz, fala, texto, áudio e restrições de fidelidade. Sem cortes ou transições.",
     "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente a peça anunciada, sem adicionar roupa por cima nem alterar cor, corte ou modelo. Em 15 segundos, use ações simples e realistas para apresentar a peça. Não tente provar ausência de transparência com a mão, alongamento, agachamento ou teste visual; não afirme que o tecido não fica transparente. Só demonstre detalhes visíveis/confirmados. Nunca levantar, puxar ou expor a roupa. A fala deve usar nome curto e destacar somente elementos confirmados.",
     "CONTINUIDADE: crie um bloco compacto com identidade visual da pessoa (se houver), roupa igual à referência, cenário, iluminação e câmera. Como existe apenas um vídeo contínuo, não descreva vários clipes nem repita instruções por clipe. Se uma pessoa não acrescentar valor, escolha mãos, demonstração ou produto em destaque.",
@@ -584,14 +588,14 @@ export async function pesquisarEstrategia(p) {
   const palavraChave = palavraChaveProduto(nome);
   const hashtagsEntrada = Array.isArray(resultado.hashtags) ? resultado.hashtags : [];
   const hashtags = [...new Set(hashtagsEntrada.map(x => {
-    const t = String(x || "").replace(/[^#\p{L}\p{N}_]/gu, "");
+    const t = String(x || "").replace(/[^#\p{L}\p{N}_]/gu, "").slice(0, 25);
     return t.startsWith("#") ? t : "#" + t;
   }).filter(x => /^#[\p{L}\p{N}_]{2,}$/u.test(x) && !/promo|desconto|oferta|venda|viral|ranking|avaliacao|preco|barato|comprador/i.test(normalizarTexto(x))))].slice(0, 3);
   const termosTag = palavraChave.split(/\s+/).filter(Boolean);
   const tagsBase = [
     "#" + (termosTag[0] || "produto").replace(/[^\p{L}\p{N}]/gu, ""),
-    "#" + (termosTag.slice(0, 2).join("").replace(/[^\p{L}\p{N}]/gu, "") || "achadinhos"),
-    "#ShopeeAchados"
+    "#" + ((termosTag[0] || "produto") + "Shopee").replace(/[^\p{L}\p{N}]/gu, ""),
+    "#AchadinhosShopee"
   ];
   for (const tag of tagsBase) if (hashtags.length < 3 && !hashtags.some(x => normalizarTexto(x) === normalizarTexto(tag))) hashtags.push(tag);
   const corpoLegenda = legendaSegura(resultado.legenda || (palavraChave + ". Confira no link!"));
@@ -610,9 +614,6 @@ export async function pesquisarEstrategia(p) {
   const falaValidada = String(clipes[0].fala || "");
   if (palavras(falaValidada).length > 30) throw new Error("A fala ultrapassou 30 palavras; gere novamente.");
   const continuidadeValidada = validarContinuidade(resultado.continuidade);
-  const modeloFlow = String(process.env.FLOW_MODELO || "Google Flow").slice(0, 80);
-  const limiteClipe = Math.max(1, Math.min(60, Number(process.env.CLIPE_MAX || 15)));
-  if (15 > limiteClipe) throw new Error("A duração de 15 segundos excede CLIPE_MAX configurado para o Flow.");
   const estrategia = {
     ...resultado,
     ganchos,

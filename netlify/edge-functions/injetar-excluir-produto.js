@@ -9,5 +9,5 @@ export default async (_req, context) => {
 
 export const config = {
   path: "/*",
-  excludedPath: ["/.netlify/functions/*", "/assets/*", "/*.css", "/*.js", "/*.json", "/*.png", "/*.jpg", "/*.jpeg", "/*.webp", "/*.svg", "/*.ico"]
+  excludedPath: ["/diretor-ia*", "/.netlify/functions/*", "/assets/*", "/*.css", "/*.js", "/*.json", "/*.png", "/*.jpg", "/*.jpeg", "/*.webp", "/*.svg", "/*.ico"]
 };

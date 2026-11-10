@@ -1,4 +1,5 @@
 export function calcularComissaoUnidade(preco, taxa) {
+  if (preco == null || preco === "" || taxa == null || taxa === "") return null;
   const valor = Number(preco);
   const percentual = Number(taxa);
   if (!Number.isFinite(valor) || valor <= 0 || !Number.isFinite(percentual) || percentual < 0) return null;
@@ -15,4 +16,11 @@ export function ordenarPorComissaoUnidade(produtos, direcao = "desc") {
     if (bv == null) return -1;
     return (av - bv) * fator;
   });
+}
+
+export function produtoElegivel(produto, minVendas = 100, minAvaliacao = 4.5) {
+  const vendas = Number(produto?.sales);
+  const avaliacao = Number(produto?.ratingStar);
+  return Number.isFinite(vendas) && Number.isFinite(avaliacao)
+    && vendas >= minVendas && avaliacao >= minAvaliacao;
 }

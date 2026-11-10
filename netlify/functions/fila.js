@@ -130,11 +130,11 @@ export default async(req)=>{
     if (error || !p?.video_estrategia) return json({ erro: error?.message || "Estratégia não encontrada." }, 404);
     const estrategia = { ...p.video_estrategia, gancho_escolhido: b.gancho };
     const base = String(estrategia.prompt_video || "");
-    const prompt = base.replace(/Gancho: [^\\n]*/i, "Gancho: " + b.gancho.texto + " Abertura visual: " + b.gancho.abertura_visual);
+    const prompt = base.replace(/Gancho: [^\\r\\n]*/i, "Gancho: " + b.gancho.texto + " Abertura visual: " + b.gancho.abertura_visual);
     estrategia.prompt_video = prompt;
     estrategia.clipes = (estrategia.clipes || []).map(c => ({
       ...c,
-      prompt_flow: String(c.prompt_flow || "").replace(/Gancho: [^\\n]*/i, "Gancho: " + b.gancho.texto + " Abertura visual: " + b.gancho.abertura_visual)
+      prompt_flow: String(c.prompt_flow || "").replace(/Gancho: [^\\r\\n]*/i, "Gancho: " + b.gancho.texto + " Abertura visual: " + b.gancho.abertura_visual)
     }));
     const { error: saveError } = await sb.from("produtos").update({
       video_estrategia: estrategia,

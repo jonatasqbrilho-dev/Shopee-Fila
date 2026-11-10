@@ -1,4 +1,6 @@
 // Funções puras de validação do Diretor IA.
+export const DURACAO_PADRAO_DIRETOR = 10;
+export const LIMITE_FALA_DIRETOR = 22;
 export const palavras = s => String(s || "").trim().split(/\s+/).filter(Boolean);
 export const normalizarTexto = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 export const legendaSegura = s => {

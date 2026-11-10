@@ -1,4 +1,5 @@
 import { db, shopee, avaliar } from "./lib.js";
+import { produtoElegivel } from "./lib/comissao.js";
 
 const CATEGORIAS = {
   feminina: ["vestido feminino","blusa feminina","calça feminina","conjunto feminino","saia feminina","short feminino","cropped feminino","moda feminina","camiseta feminina","body feminino","macacão feminino","jaqueta feminina"],
@@ -59,7 +60,7 @@ export async function coletarCategoria(categoria="feminina"){
         if(!d?.productOfferV2?.pageInfo?.hasNextPage) break;
       }
 
-      const elegiveis=candidatos.filter(n=>Number(n.sales)>=MIN_VENDAS&&Number(n.ratingStar)>=4.5);
+      const elegiveis=candidatos.filter(n=>produtoElegivel(n, MIN_VENDAS, 4.5));
       item.elegiveis=elegiveis.length;
       if(!elegiveis.length){detalhes.push(item);continue;}
 

@@ -29,6 +29,7 @@ test("rejeita ganchos repetidos ou incompletos", () => {
 test("remove preço, porcentagem e afirmações promocionais da legenda", () => {
   const clean = legendaSegura("Só R$ 29,90 com 50% de desconto! Produto para sua casa. #Casa");
   assert.doesNotMatch(clean, /R\$|50%|desconto/i);
+  assert.doesNotMatch(legendaSegura("Compre por 29,90 reais, 500 vendidos e 5 estrelas"), /29,90|500|5 estrelas/i);
   assert.ok(clean.length <= 150);
 });
 

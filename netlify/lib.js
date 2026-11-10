@@ -88,10 +88,17 @@ async function iaJson(prompt){
 async function iaJsonDiretor(prompt) {
   const controladores = [new AbortController(), new AbortController()];
   const limite = setTimeout(() => controladores.forEach(c => c.abort()), 20000);
+  const validar = async (chamar) => {
+    const resposta = await chamar();
+    if (!resposta?.formato_escolhido || !resposta?.prompt_video) {
+      throw new Error("O provedor retornou uma estratégia incompleta.");
+    }
+    return resposta;
+  };
   try {
     return await Promise.any([
-      groq(prompt, { signal: controladores[0].signal, maxTokens: 4096, reasoningEffort: "low" }),
-      gemini(prompt, { signal: controladores[1].signal, maxTokens: 4096, thinkingBudget: 0 })
+      validar(() => groq(prompt, { signal: controladores[0].signal, maxTokens: 4096, reasoningEffort: "low" })),
+      validar(() => gemini(prompt, { signal: controladores[1].signal, maxTokens: 4096, thinkingBudget: 0 }))
     ]);
   } catch (e) {
     const motivos = (e.errors || [e]).map(x => x?.message || String(x));

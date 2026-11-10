@@ -25,8 +25,8 @@ export function validarGanchos(ganchos) {
     const abertura = String(g.abertura_visual || g.visual || "").trim();
     return { tipo, texto: texto.slice(0, 180), abertura_visual: abertura.slice(0, 240) };
   });
-  if (saida.some(g => !g.texto || !g.abertura_visual)) {
-    throw new Error("A IA não retornou os três ganchos completos. Tente novamente.");
+  if (saida.some(g => !g.texto || !g.abertura_visual || palavras(g.texto).length > 12)) {
+    throw new Error("A IA não retornou três ganchos completos de até 12 palavras. Tente novamente.");
   }
   if (new Set(saida.map(g => normalizarTexto(g.texto))).size !== 3) {
     throw new Error("Os três ganchos precisam ser diferentes entre si. Gere novamente.");

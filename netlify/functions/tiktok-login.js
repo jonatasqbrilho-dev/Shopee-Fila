@@ -22,8 +22,12 @@ export default async function handler(req) {
     state
   });
 
-  return json({ authorization_url: `${AUTH_URL}?${params.toString()}` }, 200, {
-    "set-cookie": `tiktok_oauth_state=${state}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`,
-    "cache-control": "no-store"
+  return new Response(JSON.stringify({ authorization_url: `${AUTH_URL}?${params.toString()}` }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "set-cookie": `tiktok_oauth_state=${state}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      "cache-control": "no-store"
+    }
   });
 }

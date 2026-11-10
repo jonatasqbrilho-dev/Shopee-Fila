@@ -1,16 +1,16 @@
 import crypto from "node:crypto";
-import { autorizado, json } from "../lib.js";
+import { autorizado } from "../lib.js";
 
 const REDIRECT_URI = "https://shopeefila.netlify.app/tiktok/callback";
 const AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/";
 
 export default async function handler(req) {
-  if (!autorizado(req)) return json({ erro: "Acesso não autorizado. Entre novamente no Shopee Fila." }, 401);
-  if (req.method !== "GET") return json({ erro: "Use GET para iniciar a conexão." }, 405);
+  if (!autorizado(req)) return new Response(JSON.stringify({ erro: "Acesso não autorizado. Entre novamente no Shopee Fila." }), { status: 401, headers: { "content-type": "application/json" } });
+  if (req.method !== "GET") return new Response(JSON.stringify({ erro: "Use GET para iniciar a conexão." }), { status: 405, headers: { "content-type": "application/json" } });
 
   const clientKey = process.env.TIKTOK_CLIENT_KEY;
   if (!clientKey || !process.env.TIKTOK_CLIENT_SECRET) {
-    return json({ erro: "TikTok não está configurado no Netlify." }, 500);
+    return new Response(JSON.stringify({ erro: "TikTok não está configurado no Netlify." }), { status: 500, headers: { "content-type": "application/json" } });
   }
 
   const state = crypto.randomBytes(32).toString("hex");

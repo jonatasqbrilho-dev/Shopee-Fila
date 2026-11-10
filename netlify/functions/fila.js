@@ -89,6 +89,25 @@ export default async(req)=>{
       return json({ ok: true, estrategia });
     } catch (e) { return json({ erro: e.message || "Falha na pesquisa" }, 500); }
   }
+  if (b.acao === "avaliar_estrategia") {
+    const feedback = b.feedback === "aprovado" ? "aprovado" : b.feedback === "rejeitado" ? "rejeitado" : null;
+    if (!feedback) return json({ erro: "Avaliação inválida." }, 400);
+    const { data: memoria, error: buscaError } = await sb.from("diretor_ia_memoria")
+      .select("id")
+      .eq("produto_id", b.id)
+      .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (buscaError) return json({ erro: "Não foi possível localizar a memória: " + buscaError.message }, 500);
+    if (!memoria) return json({ erro: "Ainda não existe uma análise salva para este produto." }, 404);
+    const { error } = await sb.from("diretor_ia_memoria").update({
+      feedback,
+      observacao: String(b.observacao || "").slice(0, 500) || null,
+      avaliado_em: new Date().toISOString()
+    }).eq("id", memoria.id);
+    if (error) return json({ erro: "Não foi possível salvar sua avaliação: " + error.message }, 500);
+    return json({ ok: true, feedback });
+  }
   if (b.acao === "obter_estrategia") {
     const { data: p, error } = await sb.from("produtos").select("id,nome,video_estrategia,video_pesquisado_em,video_prompt").eq("id", b.id).single();
     if (error || !p) return json({ erro: error?.message || "Produto não encontrado" }, 404);

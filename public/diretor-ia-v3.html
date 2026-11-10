@@ -19,6 +19,15 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 function msg(t,err=false){$("message").textContent=t;$("message").classList.remove("hidden");$("message").style.background=err?"#fff0ef":"#eef5ee"}
 async function load(){$("product").innerHTML='<option value="">Carregando produtos…</option>';$("product").disabled=true;try{const arr=await get(API+"?todos=1");products=Array.isArray(arr)?arr:[];$("product").innerHTML='<option value="">— Selecione um produto —</option>'+products.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.nome)+' · '+esc(p.status||"")+'</option>').join("");if(!products.length){msg("Nenhum produto foi encontrado. Confira se os produtos estão cadastrados na Fila.",true)}const requested=new URLSearchParams(location.search).get("produto");if(requested&&products.some(p=>String(p.id)===requested)){$("product").value=requested;$("product").dispatchEvent(new Event("change"));msg("Produto carregado automaticamente. Você já pode pesquisar uma estratégia para ele.")}}catch(e){$("product").innerHTML='<option value="">Falha ao carregar produtos</option>';msg("Não foi possível carregar a lista: "+e.message,true)}finally{$("product").disabled=false}}
 function render(e){
+  const clipsValidos=Array.isArray(e.clipes)&&e.clipes.length===1&&Number(e.duracao_segundos)===10&&Number(e.clipes[0].duracao_segundos)===10;
+  const promptAntigo=[e.prompt_video,e.clipes?.[0]?.prompt_flow].filter(Boolean).some(p=>/15\s*(?:segundos|s)\b|0\s*[–-]\s*15s/i.test(String(p)));
+  const erroVisionAntigo=(e.analise_imagem?.lacunas||[]).some(x=>/gemini-2\.5-flash/i.test(String(x)));
+  if(!clipsValidos||promptAntigo||erroVisionAntigo){
+    $("result").classList.remove("hidden");
+    $("result").innerHTML='<section class="result"><h2>Resultado antigo detectado</h2><p>Esta estratégia foi salva com a versão anterior do Diretor IA. Ela ainda contém duração ou modelo antigos e não deve ser usada no Google Flow.</p><p><b>Selecione o produto e clique em “Pesquisar e escolher estratégia” novamente.</b> A nova análise será feita com vídeo de 10 segundos e o modelo Gemini atualizado.</p></section>';
+    return;
+  }
+
  const sources=e.fontes_utilizadas||e.fontes_pesquisadas||[];
  const scenes=e.estrutura_cenas||[];
  const clips=e.clipes||[];

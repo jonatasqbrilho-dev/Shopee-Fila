@@ -71,7 +71,10 @@ export default async(req)=>{
     const {data,error}=await sb.from("produtos").select("*").eq("status",url.searchParams.get("status")||"pendente").order("atualizado_em",{ascending:false}).limit(100);if(error)return json({erro:error.message},500);
     const limpos=(data||[]).map(p=>({...p,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[]}));return json(limpos);
   }
-  const b=await req.json();
+  const b=await req.json().catch(() => null);
+  if (!b || typeof b !== "object" || Array.isArray(b)) {
+    return json({ erro: "Corpo da solicitação inválido. Envie um JSON válido." }, 400);
+  }
 
   if (b.acao === "pesquisar_estrategia") {
     const { data: p, error } = await sb.from("produtos").select("*").eq("id", b.id).single();
@@ -123,7 +126,26 @@ export default async(req)=>{
       return e?json({erro:e.message},500):json({ok:true,conteudo:c});
     }catch(e){return json({erro:e.message},500)}
   }
-  if(b.acao==="gerar_links"){const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);const r=await gerarLinks(p),links=r.out,subs=["tiktok","youtube","instagram","telegram"].map(k=>platformSub(p,k));const {error:e}=await sb.from("produtos").update({links_plataforma:links,sub_ids:subs,atualizado_em:new Date().toISOString()}).eq("id",b.id);if(e)return json({erro:e.message},500);const gerados=Object.values(links).filter(Boolean).length;return gerados?json({ok:true,links,gerados,total:4}):json({erro:"Shopee não gerou nenhum link.",detalhes:r.erros},400);}
+  if (b.acao === "gerar_links") {
+    try {
+      const { data: p, error } = await sb.from("produtos").select("*").eq("id", b.id).single();
+      if (error || !p) return json({ erro: error?.message || "Produto não encontrado" }, 404);
+      const r = await gerarLinks(p);
+      const links = r.out;
+      const subs = ["tiktok", "youtube", "instagram", "telegram"].map(k => platformSub(p, k));
+      const { error: updateError } = await sb.from("produtos").update({
+        links_plataforma: links, sub_ids: subs, atualizado_em: new Date().toISOString()
+      }).eq("id", b.id);
+      if (updateError) return json({ erro: updateError.message }, 500);
+      const gerados = Object.values(links).filter(Boolean).length;
+      return gerados
+        ? json({ ok: true, links, gerados, total: 4 })
+        : json({ erro: "Shopee não gerou nenhum link.", detalhes: r.erros }, 400);
+    } catch (e) {
+      console.error("gerar_links:", e);
+      return json({ erro: e.message || "Falha ao gerar links." }, 500);
+    }
+  }
   if(b.acao==="sincronizar_metricas"){try{return json({ok:true,...await sincronizarConversoes(sb)});}catch(e){return json({erro:e.message},500)}}
   if(b.acao==="salvar_video_url"){const video=String(b.video_url||"").trim();if(!video)return json({erro:"URL do vídeo ausente."},400);const {error}=await sb.from("produtos").update({video_url:video,atualizado_em:new Date().toISOString()}).eq("id",b.id);return error?json({erro:error.message},500):json({ok:true,video_url:video});}
   if(b.acao==="upload_url"){const path=`${b.id}-${Date.now()}.${String(b.ext||"mp4").replace(/\W/g,"")}`,r=await sb.storage.from("videos").createSignedUploadUrl(path);if(r.error)return json({erro:r.error.message},500);return json({url:r.data.signedUrl,publico:sb.storage.from("videos").getPublicUrl(path).data.publicUrl});}

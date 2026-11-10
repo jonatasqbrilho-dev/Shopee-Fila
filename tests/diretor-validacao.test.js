@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade } from "../netlify/diretor-validacao.js";
 
 test("extrai palavra-chave apenas do nome do produto", () => {
-  assert.equal(palavraChaveProduto("Kit de 3 Potes Herméticos para Cozinha"), "potes hermeticos cozinha");
+  assert.equal(palavraChaveProduto("Kit de 3 Potes Herméticos para Cozinha"), "potes herméticos cozinha");
 });
 
 test("valida três ganchos distintos e mantém as três abordagens", () => {
@@ -23,6 +23,7 @@ test("rejeita ganchos repetidos ou incompletos", () => {
     { texto: "Veja isso", abertura_visual: "Abrir produto." }
   ]), /diferentes/);
   assert.throws(() => validarGanchos([]), /completos/);
+  assert.throws(() => validarGanchos([{texto:"uma frase com mais de doze palavras que deve ser rejeitada agora",abertura_visual:"Mostrar."},{texto:"Curiosidade",abertura_visual:"Aproximar."},{texto:"Demonstração",abertura_visual:"Abrir."}]), /12 palavras/);
 });
 
 test("remove preço, porcentagem e afirmações promocionais da legenda", () => {

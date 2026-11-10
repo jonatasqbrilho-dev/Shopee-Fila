@@ -4,44 +4,6 @@ import { getStore } from "@netlify/blobs";
 import { db, json, autorizado } from "../lib.js";
 
 const TT = "https://open.tiktokapis.com/v2";
-const cookie = (name, req) => {
-  const raw = req.headers.get("cookie") || "";
-  return raw.split(";").map(x => x.trim()).find(x => x.startsWith(name + "="))?.slice(name.length + 1) || "";
-};
-const b64 = bytes => Buffer.from(bytes).toString("base64url");
-const randomState = () => b64(crypto.getRandomValues(new Uint8Array(24)));
-const redirect = (url, headers={}) => new Response(null, { status: 302, headers: { Location: url, ...headers } });
-const escHtml = s => String(s || "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-
-async function tiktokOAuthStart(req) {
-  const key = process.env.TIKTOK_CLIENT_KEY, redirectUri = process.env.TIKTOK_REDIRECT_URI;
-  if (!key || !redirectUri) return new Response("Configure TIKTOK_CLIENT_KEY e TIKTOK_REDIRECT_URI no Netlify.", { status: 500 });
-  const state = randomState();
-  const u = new URL("https://www.tiktok.com/v2/auth/authorize/");
-  u.searchParams.set("client_key", key);
-  u.searchParams.set("response_type", "code");
-  u.searchParams.set("scope", "user.info.basic,video.publish");
-  u.searchParams.set("redirect_uri", redirectUri);
-  u.searchParams.set("state", state);
-  u.searchParams.set("disable_auto_auth", "0");
-  return redirect(u.toString(), { "Set-Cookie": `tt_oauth_state=${state}; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Lax` });
-}
-
-async function tiktokOAuthCallback(req) {
-  const u = new URL(req.url), code = u.searchParams.get("code"), state = u.searchParams.get("state"), expected = cookie("tt_oauth_state", req);
-  if (!state || !expected || state !== expected) return new Response("Estado OAuth inválido. Tente conectar novamente.", { status: 400 });
-  if (!code) return new Response("Autorização cancelada ou código ausente.", { status: 400 });
-  const form = new URLSearchParams({ client_key: process.env.TIKTOK_CLIENT_KEY || "", client_secret: process.env.TIKTOK_CLIENT_SECRET || "", code, grant_type: "authorization_code", redirect_uri: process.env.TIKTOK_REDIRECT_URI || "" });
-  const r = await fetch(`${TT}/oauth/token/`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache" }, body: form });
-  const j = await r.json();
-  if (!r.ok || !j.access_token) return new Response(`Falha no TikTok: ${escHtml(j.error_description || j.error || JSON.stringify(j))}`, { status: 400, headers: { "content-type": "text/html; charset=utf-8" } });
-  const sb = db();
-  const now = new Date();
-  const { error } = await sb.from("social_integrations").upsert({ provider: "tiktok", access_token: j.access_token, refresh_token: j.refresh_token, expires_at: new Date(now.getTime() + Number(j.expires_in || 86400) * 1000).toISOString(), open_id: j.open_id || null, scopes: j.scope || null, updated_at: now.toISOString() }, { onConflict: "provider" });
-  if (error) return new Response(`Token autorizado, mas não foi possível salvar: ${escHtml(error.message)}`, { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
-  return new Response(`<meta name="viewport" content="width=device-width"><body style="font-family:system-ui;padding:30px"><h2>✅ TikTok conectado</h2><p>Você pode fechar esta janela e voltar ao Shopee-Fila.</p><script>setTimeout(()=>window.close(),1200)</script></body>`, { headers: { "content-type": "text/html; charset=utf-8", "Set-Cookie": "tt_oauth_state=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax" } });
-}
-
 async function getTikTokToken() {
   const store = getStore({ name: "tiktok-auth", consistency: "strong" });
   const data = await store.get("main-account", { type: "json" });
@@ -108,9 +70,6 @@ async function publishTelegram(body) {
 }
 
 export default async req => {
-  const url = new URL(req.url);
-  if (url.searchParams.get("oauth") === "start") return tiktokOAuthStart(req);
-  if (url.searchParams.get("oauth") === "callback") return tiktokOAuthCallback(req);
   if (!autorizado(req)) return json({ erro: "Senha incorreta" }, 401);
   if (req.method !== "POST") return json({ erro: "Use POST" }, 405);
   try {

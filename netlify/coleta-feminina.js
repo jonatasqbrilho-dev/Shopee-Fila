@@ -86,7 +86,7 @@ export async function coletarCategoria(categoria="feminina"){
           return {item_id:String(n.itemId),nome:n.productName,imagem:n.imageUrl,preco:Number(n.priceMin),desconto:Number(n.priceDiscountRate)||0,vendas:n.sales,avaliacao:Number(n.ratingStar),comissao:Number(n.commissionRate),link_afiliado:n.offerLink,link_produto:n.productLink,nota:a.nota,motivo:a.motivo,legenda:a.legenda,status:a.nota>=NOTA_MIN?"pendente":"descartado",atualizado_em:new Date().toISOString()};
         }catch(e){item.erro=item.erro||("Falha na IA: "+e.message);return null;}
       }))).filter(Boolean);
-      if(linhas.length){const {error}=await sb.from("produtos").insert(linhas);if(error)throw new Error("Supabase gravação: "+error.message);item.gravados+=linhas.length;total+=linhas.length;}
+      if(linhas.length){const {data:gravados,error}=await sb.from("produtos").upsert(linhas,{onConflict:"item_id",ignoreDuplicates:true}).select("item_id");if(error)throw new Error("Supabase gravação: "+error.message);const quantidade=gravados?.length||0;item.gravados+=quantidade;total+=quantidade;item.ignorados_repetidos+=linhas.length-quantidade;}
     }catch(e){item.erro=item.erro||(e instanceof Error?e.message:String(e));console.error("Coleta categoria:",categoria,kw,item.erro);}
     detalhes.push(item);
     if(total>=MAX_NOVOS) break;

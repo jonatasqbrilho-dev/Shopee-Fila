@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { db, json, autorizado, shopee, gerarConteudo, pesquisarEstrategia } from "../lib.js";
 
 const escGql=s=>String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"');
@@ -76,6 +77,28 @@ export default async(req)=>{
     return json({ erro: "Corpo da solicitação inválido. Envie um JSON válido." }, 400);
   }
 
+  if (b.acao === "preparar_estrategia") {
+    if (!b.id) return json({ erro: "Produto não informado." }, 400);
+    const { data: p, error } = await sb.from("produtos")
+      .select("id,diretor_ia_status,diretor_ia_iniciado_em")
+      .eq("id", b.id).single();
+    if (error || !p) return json({ erro: error?.message || "Produto não encontrado." }, 404);
+    const inicioAnterior = p.diretor_ia_iniciado_em ? new Date(p.diretor_ia_iniciado_em).getTime() : 0;
+    if (p.diretor_ia_status === "running" && Date.now() - inicioAnterior < 15 * 60 * 1000) {
+      return json({ erro: "Já existe uma pesquisa em andamento para este produto." }, 409);
+    }
+    const jobId = randomUUID();
+    const agora = new Date().toISOString();
+    const { error: saveError } = await sb.from("produtos").update({
+      diretor_ia_status: "queued",
+      diretor_ia_erro: null,
+      diretor_ia_job_id: jobId,
+      diretor_ia_iniciado_em: agora,
+      diretor_ia_concluido_em: null
+    }).eq("id", b.id);
+    if (saveError) return json({ erro: "Não foi possível iniciar a pesquisa: " + saveError.message }, 500);
+    return json({ ok: true, job_id: jobId, status: "queued" });
+  }
   if (b.acao === "pesquisar_estrategia") {
     const { data: p, error } = await sb.from("produtos").select("*").eq("id", b.id).single();
     if (error || !p) return json({ erro: error?.message || "Produto não encontrado" }, 404);
@@ -112,7 +135,7 @@ export default async(req)=>{
     return json({ ok: true, feedback });
   }
   if (b.acao === "obter_estrategia") {
-    const { data: p, error } = await sb.from("produtos").select("id,nome,video_estrategia,video_pesquisado_em,video_prompt").eq("id", b.id).single();
+    const { data: p, error } = await sb.from("produtos").select("id,nome,video_estrategia,video_pesquisado_em,video_prompt,diretor_ia_status,diretor_ia_erro,diretor_ia_job_id,diretor_ia_iniciado_em,diretor_ia_concluido_em").eq("id", b.id).single();
     if (error || !p) return json({ erro: error?.message || "Produto não encontrado" }, 404);
     return json({ ok: true, produto: p });
   }

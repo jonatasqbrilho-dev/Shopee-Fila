@@ -133,9 +133,8 @@ async function iaJsonDiretor(prompt) {
       ...c,
       numero: i + 1,
       duracao_segundos: duracoes[i],
-      prompt_flow: ("DURAÇÃO EXATA DESTE CLIPE: " + Number(c.duracao_segundos) + " segundos. Gere somente esta cena, sem prolongar nem encurtar.\\n" + String(c.prompt_flow || "").trim())
-        .replace(/(?:dura[cç][aã]o|duration)\\s*:?\\s*\\d+\\s*(?:s|segundos?)?/gi, "")
-        .trim()
+      prompt_flow: ("DURAÇÃO EXATA DESTE CLIPE: " + duracoes[i] + " segundos. Gere somente esta cena, sem prolongar nem encurtar.\\n" +
+        String(c.prompt_flow || "").trim().replace(/(?:dura[cç][aã]o|duration)\\s*:?\\s*\\d+\\s*(?:s|segundos?)?/gi, "").trim())
     }));
     resposta.duracao_segundos = total;
     return resposta;

@@ -26,7 +26,7 @@ async function revalidarProduto(sb, productId) {
   if (!Number.isFinite(preco) || preco <= 0) throw new Error("A Shopee não retornou um preço válido para este produto.");
   if (!Number.isFinite(comissao) || comissao <= 0) throw new Error("A Shopee não retornou comissão positiva para este produto. Confira a oferta antes de produzir.");
   let linkValido = false;
-  try { const u = new URL(link); linkValido = u.protocol === "https:" && /(^|\\.)shopee\\./i.test(u.hostname); } catch {}
+  try { const u = new URL(link); const host = u.hostname.toLowerCase(); linkValido = u.protocol === "https:" && (host === "shopee.com.br" || host.endsWith(".shopee.com.br") || host === "shopee.com" || host.endsWith(".shopee.com") || host === "shope.ee" || host.endsWith(".shope.ee")); } catch {}
   if (!linkValido) throw new Error("A Shopee não retornou um link HTTPS válido para este produto.");
 
   const anterior = calcularComissaoUnidade(produto.preco, produto.comissao);

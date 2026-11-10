@@ -118,9 +118,9 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
     const juntar = (campo) => clipesOriginais.map(c => String(c?.[campo] || "").trim()).filter(Boolean).join(" ");
     const falaOriginal = juntar("fala");
     let fala = falaOriginal
-      ? falaOriginal.replace(/\\s+/g, " ").trim().split(/\\s+/).slice(0, 17).join(" ")
+      ? falaOriginal.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 17).join(" ")
       : "Olha só esse produto!";
-    if (!/\\b(link|compre|comprar|garanta|garantir|confira)\\b/i.test(fala)) fala += " Confira e compre pelo link!";
+    if (!/\b(link|compre|comprar|garanta|garantir|confira)\b/i.test(fala)) fala += " Confira e compre pelo link!";
     const detalhes = [
       "VÍDEO ÚNICO, CONTÍNUO E COMPLETO — duração EXATA de 10 segundos, formato vertical 9:16.",
       "Apresente o produto imediatamente no primeiro segundo. Escolha a melhor forma de apresentação para este item: uma pessoa falando diretamente com a câmera, demonstração com as mãos, uso real ou enquadramento do próprio produto. Não force uma modelo quando ela não acrescentar valor.",
@@ -266,7 +266,7 @@ export async function coletar(){
 }
 
 const decodeHtml = (s) => String(s || "").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#x27;|&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&#x2F;/g,"/");
-const stripTags = (s) => decodeHtml(String(s || "").replace(/<[^>]*>/g," ")).replace(/\\s+/g," ").trim();
+const stripTags = (s) => decodeHtml(String(s || "").replace(/<[^>]*>/g," ")).replace(/\s+/g," ").trim();
 
 async function pesquisarWebProduto(nome, categoria) {
   const consultas = [

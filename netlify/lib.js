@@ -584,7 +584,7 @@ export async function pesquisarEstrategia(p) {
   const contextoQuantidade = quantidadeKit
     ? "O título/descrição declara KIT com " + quantidadeKit + " peças. A estratégia e o prompt devem mostrar exatamente " + quantidadeKit + " peças, sem confundir modelos ou fotos com unidades."
     : "A quantidade de peças não está confirmada; não invente kit, quantidade nem variações incluídas.";
-  const resultado = await iaJsonDiretor(prompt + "\\n\\nQUANTIDADE DO ANÚNCIO: " + contextoQuantidade, nome, { quantidadeKit });
+  const resultado = await iaJsonDiretor(prompt + "\n\nQUANTIDADE DO ANÚNCIO: " + contextoQuantidade, nome, { quantidadeKit });
   const clipes = resultado.clipes.map((c, i) => ({
     ...c,
     numero: Number(c.numero || i + 1),

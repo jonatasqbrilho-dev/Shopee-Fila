@@ -38,14 +38,18 @@ export default async req => {
       return;
     }
 
-    const { error: startError } = await sb.from("produtos").update({
+    const { data: started, error: startError } = await sb.from("produtos").update({
       diretor_ia_status: "running",
       diretor_ia_erro: null
-    }).eq("id", body.id).eq("diretor_ia_job_id", body.job_id).eq("diretor_ia_status", "queued");
+    }).eq("id", body.id).eq("diretor_ia_job_id", body.job_id).eq("diretor_ia_status", "queued").select("id").maybeSingle();
 
     if (startError) {
       console.error("Diretor IA: não foi possível marcar execução", startError.message);
       await marcarErroSeAtual(sb, body.id, body.job_id, startError.message);
+      return;
+    }
+    if (!started) {
+      console.warn("Diretor IA: outra execução já iniciou ou a tarefa ficou obsoleta", body.id);
       return;
     }
 

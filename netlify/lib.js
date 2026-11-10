@@ -326,7 +326,7 @@ async function analisarImagemDiretor(p) {
     if (u.protocol !== "https:" || !hostPermitido(host)) {
       return { status: "imagem_nao_permitida", fatos_visiveis: [], lacunas: ["O endereço da imagem não usa HTTPS ou não pertence aos domínios oficiais de imagem da Shopee."] };
     }
-    const resposta = await fetch(u.href, { redirect: "follow", signal: AbortSignal.timeout(5000), headers: { "User-Agent": "Mozilla/5.0 ShopeeFilaDirector/1.0" } });
+    const resposta = await fetch(u.href, { redirect: "follow", signal: AbortSignal.timeout(7000), headers: { "User-Agent": "Mozilla/5.0 ShopeeFilaDirector/1.0" } });
     if (!resposta.ok) throw new Error("Download da imagem retornou HTTP " + resposta.status);
     const hostFinal = new URL(resposta.url || u.href).hostname;
     if (!hostPermitido(hostFinal)) throw new Error("A imagem foi redirecionada para um domínio externo não autorizado.");
@@ -345,7 +345,7 @@ async function analisarImagemDiretor(p) {
         contents: [{ parts: [{ text: promptImagem }, { inlineData: { mimeType: tipo, data: bytes.toString("base64") } }] }],
         generationConfig: { responseMimeType: "application/json", maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } }
       }),
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(14000)
     });
     const j = await r.json();
     const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\n");
@@ -468,7 +468,51 @@ export async function pesquisarEstrategia(p) {
     throw new Error("A estratégia retornada não passou na validação dos clipes. Gere novamente.");
   }
   if (duracao !== 10) throw new Error("O vídeo precisa ter exatamente 10 segundos.");
-  const promptVideo = String(resultado.prompt_video || "").trim().slice(0, 12000);
+  let promptVideo = String(resultado.prompt_video || "").trim().slice(0, 12000);
+  if (categoria === "fitness") {
+    const conjuntoShortTop = /conjunto/i.test(nome) && /short/i.test(nome) && /top/i.test(nome) && /forro duplo/i.test(nome);
+    const falaFitness = conjuntoShortTop
+      ? "Olha esse conjunto: short com bolso e top com forro duplo. Gostou? Clique no link e confira!"
+      : "Confira este item para seus treinos. Gostou? Clique no link e veja os detalhes!";
+    const acaoFitness = conjuntoShortTop
+      ? "A modelo já aparece vestindo exatamente o conjunto do anúncio. Em um único movimento natural, olha para a câmera, indica discretamente o bolso do short apenas se ele estiver visível e finaliza sorrindo para a câmera. Não segura bolsa, não faz alongamento, não agacha e não puxa ou levanta a roupa."
+      : "Apresentador ou modelo mostra o item exatamente como aparece no anúncio, com um gesto simples e natural, sem inventar teste, função ou benefício.";
+    const promptFitness = [
+      "VÍDEO ÚNICO E CONTÍNUO DE EXATOS 10 SEGUNDOS, vertical 9:16, pronto para Google Flow.",
+      "Produto: " + nome + ". Use a imagem do anúncio como referência visual principal. Preserve exatamente modelo, cores, corte, formato e componentes; não acrescente peças nem acessórios.",
+      conjuntoShortTop
+        ? "Apresentação: modelo feminina vestindo somente o conjunto anunciado, sem roupa por cima. Fundo simples de academia, iluminação suave e câmera estabilizada em um movimento lateral discreto. A modelo já começa com o conjunto visível, olha para a câmera, indica o bolso somente se estiver claramente visível e termina olhando para a câmera."
+        : "Apresentação: escolha uma pessoa ou demonstração do próprio produto conforme a referência. Cenário limpo, iluminação suave e câmera estabilizada. Mantenha o produto visível durante toda a tomada.",
+      "Ritmo dentro da mesma tomada: 0–2s produto aparece imediatamente; 2–6s apresentação simples da característica confirmada; 6–10s recomendação e CTA. Sem cortes, transições, troca de roupa ou cenário.",
+      "Fala em português brasileiro, natural e sincronizada: “" + falaFitness + "”",
+      "Texto discreto na tela: Confira na Shopee.",
+      "Não afirme zero transparência, compressão, sustentação, conforto garantido ou qualquer resultado que não possa ser comprovado. Não faça teste de transparência, alongamento, agachamento ou gesto de puxar a roupa. Não invente tecido, cor, tamanho ou detalhes ausentes do anúncio.",
+      "Áudio: voz clara em primeiro plano e música instrumental discreta, sem encobrir a fala."
+    ].join("\n\n");
+    clipes[0] = {
+      ...clipes[0],
+      numero: 1,
+      duracao_segundos: 10,
+      objetivo: "Apresentar o produto e convidar à compra em um único vídeo",
+      visual: "Produto visível desde o primeiro segundo, com apresentação natural e fiel ao anúncio",
+      acao: acaoFitness,
+      camera: "Uma única tomada contínua, câmera estabilizada e movimento suave",
+      fala: falaFitness,
+      texto_tela: "Confira na Shopee",
+      prompt_flow: promptFitness
+    };
+    promptVideo = promptFitness;
+    resultado.prompt_video = promptFitness;
+    resultado.narracao = falaFitness;
+    resultado.cta = "Clique no link para conferir e comprar na Shopee.";
+    resultado.estrutura_cenas = [{
+      momento: "0–10s",
+      visual: "Produto visível desde o primeiro segundo",
+      objetivo: "Apresentar a característica confirmada e convidar à compra",
+      camera: "Uma única tomada contínua com câmera estabilizada",
+      acao: acaoFitness
+    }];
+  }
   if (!resultado.formato_escolhido || !promptVideo) throw new Error("A IA não retornou uma estratégia completa.");
   const estrategia = {
     ...resultado,

@@ -23,7 +23,7 @@ test("rejeita ganchos repetidos ou incompletos", () => {
     { texto: "Veja isso", abertura_visual: "Abrir produto." }
   ]), /diferentes/);
   assert.throws(() => validarGanchos([]), /completos/);
-  assert.throws(() => validarGanchos([{texto:"uma frase com mais de doze palavras que deve ser rejeitada agora",abertura_visual:"Mostrar."},{texto:"Curiosidade",abertura_visual:"Aproximar."},{texto:"Demonstração",abertura_visual:"Abrir."}]), /12 palavras/);
+  assert.throws(() => validarGanchos([{texto:"uma frase com mais de doze palavras que deve ser rejeitada agora mesmo",abertura_visual:"Mostrar."},{texto:"Curiosidade",abertura_visual:"Aproximar."},{texto:"Demonstração",abertura_visual:"Abrir."}]), /12 palavras/);
 });
 
 test("remove preço, porcentagem e afirmações promocionais da legenda", () => {

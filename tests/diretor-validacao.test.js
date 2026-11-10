@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade } from "../netlify/diretor-validacao.js";
+import { DURACAO_PADRAO_DIRETOR, LIMITE_FALA_DIRETOR, palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade } from "../netlify/diretor-validacao.js";
 
 test("extrai palavra-chave apenas do nome do produto", () => {
   assert.equal(palavraChaveProduto("Kit de 3 Potes Herméticos para Cozinha"), "potes herméticos cozinha");
@@ -44,4 +44,10 @@ test("limita fala por palavras", () => {
 test("preenche continuidade para evitar mudanças entre tomadas", () => {
   const c = validarContinuidade({});
   assert.ok(c.pessoa && c.roupa && c.cenario && c.iluminacao && c.camera);
+});
+
+test("Diretor IA usa vídeo padrão de 10 segundos e fala curta para esse tempo", () => {
+  assert.equal(DURACAO_PADRAO_DIRETOR, 10);
+  assert.equal(LIMITE_FALA_DIRETOR, 22);
+  assert.ok(palavras("Regata gola boba, soltinha e versátil. Confira no link!").length <= LIMITE_FALA_DIRETOR);
 });

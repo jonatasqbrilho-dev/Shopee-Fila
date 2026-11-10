@@ -15,9 +15,9 @@ export async function shopee(query) {
 
 const lerJson = (texto) => {
   const limpo = String(texto || "")
-    .replace(/<think>[\\s\\S]*?<\\/think>/g, "")
-    .replace(/^```(?:json)?\\s*/i, "")
-    .replace(/\\s*```$/i, "")
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/^\x60{3}(?:json)?\s*/i, "")
+    .replace(/\s*\x60{3}$/i, "")
     .trim();
   try { return JSON.parse(limpo); } catch {}
   let inicio = -1, profundidade = 0, emString = false, escape = false;
@@ -25,7 +25,7 @@ const lerJson = (texto) => {
     const c = limpo[i];
     if (emString) {
       if (escape) escape = false;
-      else if (c === "\\\\") escape = true;
+      else if (c === "\\") escape = true;
       else if (c === '"') emString = false;
       continue;
     }

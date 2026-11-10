@@ -7,10 +7,47 @@ export const autorizado = (req) => !!process.env.PAINEL_SENHA && req.headers.get
 
 export async function shopee(query) {
   const id = process.env.SHOPEE_APP_ID, payload = JSON.stringify({ query });
-  const ts = Math.floor(Date.now() / 1000);
-  const sig = crypto.createHash("sha256").update(id + ts + payload + process.env.SHOPEE_SECRET).digest("hex");
-  const r = await fetch("https://open-api.affiliate.shopee.com.br/graphql", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `SHA256 Credential=${id}, Timestamp=${ts}, Signature=${sig}` }, body: payload });
-  const j = await r.json(); if (j.errors) throw new Error(JSON.stringify(j.errors)); return j.data;
+  const endpoint = "https://open-api.affiliate.shopee.com.br/graphql";
+  const tentativas = 3;
+  const errosRepetiveis = [10000, 10030];
+  let ultimoErro;
+  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHash("sha256").update(id + ts + payload + process.env.SHOPEE_SECRET).digest("hex");
+    try {
+      const r = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `SHA256 Credential=${id}, Timestamp=${ts}, Signature=${sig}`
+        },
+        body: payload,
+        signal: AbortSignal.timeout(15000)
+      });
+      const texto = await r.text();
+      let j;
+      try { j = JSON.parse(texto); }
+      catch { throw new Error(`Shopee HTTP ${r.status}: resposta não JSON: ${texto.slice(0, 250)}`); }
+
+      const erros = Array.isArray(j.errors) ? j.errors : [];
+      const codigo = Number(erros[0]?.extensions?.code ?? erros[0]?.extensions?.errorCode ?? 0);
+      const erroSistema = erros.some(e => /system error|internal server error|temporarily unavailable/i.test(String(e?.message || e?.extensions?.message || "")));
+      const repetivel = erros.length && (errosRepetiveis.includes(codigo) || erroSistema);
+      if (r.ok && !erros.length && j.data) return j.data;
+
+      const detalhe = erros.length
+        ? JSON.stringify(erros).slice(0, 700)
+        : `Shopee HTTP ${r.status}: ${texto.slice(0, 350)}`;
+      ultimoErro = new Error(detalhe);
+      if (tentativa >= tentativas || (!repetivel && ![429, 500, 502, 503, 504].includes(r.status))) throw ultimoErro;
+    } catch (e) {
+      ultimoErro = e;
+      const temporario = e?.name === "TimeoutError" || e?.name === "AbortError" || /fetch failed|network|socket|ECONNRESET|ETIMEDOUT/i.test(String(e?.message || ""));
+      if (tentativa >= tentativas || (!temporario && !/system error|internal server error|temporarily unavailable|10000|10030/i.test(String(e?.message || "")))) throw e;
+    }
+    if (tentativa < tentativas) await new Promise(resolve => setTimeout(resolve, 800 * tentativa));
+  }
+  throw ultimoErro || new Error("Shopee API indisponível após novas tentativas.");
 }
 
 const lerJson = (texto) => {

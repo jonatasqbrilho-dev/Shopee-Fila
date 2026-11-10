@@ -4,7 +4,7 @@ export const normalizarTexto = s => String(s || "").normalize("NFD").replace(/[\
 export const legendaSegura = s => {
   let t = String(s || "").replace(/\s+/g, " ").trim();
   t = t.replace(/R\$\s?\d+(?:[.,]\d{1,2})?/gi, "")
-    .replace(/\b\d{1,3}%\b/g, "")
+    .replace(/\b\d{1,3}\s?%/g, "")
     .replace(/\b(?:desconto|promo[cç][aã]o|oferta|mais vendido|viral|recorde de vendas|milhares de vendas|ranking|avalia[cç][oõ]es|vendidos|vendas)\b/gi, "")
     .replace(/\s{2,}/g, " ").trim();
   if (t.length > 150) t = t.slice(0, 150).replace(/\s+\S*$/, "").trim();

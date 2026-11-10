@@ -90,8 +90,13 @@ async function iaJsonDiretor(prompt) {
   const limite = setTimeout(() => controladores.forEach(c => c.abort()), 20000);
   const validar = async (chamar) => {
     const resposta = await chamar();
-    if (!resposta?.formato_escolhido || !resposta?.prompt_video) {
-      throw new Error("O provedor retornou uma estratégia incompleta.");
+    if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length) {
+      throw new Error("O provedor retornou uma estratégia incompleta ou sem clipes.");
+    }
+    const duracoes = resposta.clipes.map(c => Number(c.duracao_segundos));
+    if (duracoes.some(n => !Number.isInteger(n) || n < 4 || n > 10) ||
+        duracoes.reduce((a, n) => a + n, 0) !== Number(resposta.duracao_segundos)) {
+      throw new Error("Os clipes não respeitam as durações de 4 a 10 segundos ou a duração total.");
     }
     return resposta;
   };
@@ -229,14 +234,67 @@ async function pesquisarWebProduto(nome, categoria) {
   return resultados.flat().filter(x => { if (vistos.has(x.url)) return false; vistos.add(x.url); return true; }).slice(0, 12);
 }
 
+function categoriaDiretor(nome, cadastrada) {
+  const c = String(cadastrada || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const n = String(nome || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const texto = c + " " + n;
+  const grupos = [
+    ["cozinha", /cozinha|panela|escorredor|talher|frigideira|forma|pote|garrafa|copo|organizador de pia/],
+    ["eletronicos", /eletron|fone|bluetooth|carregador|cabo usb|smartwatch|relogio inteligente|mouse|teclado|camera|led|lampada|luminaria/],
+    ["beleza", /beleza|maquiagem|cosmet|skincare|cabelo|escova|secador|chapinha|perfume|unha|barbear/],
+    ["moda", /moda|roupa|vestido|calca|camiseta|blusa|tenis|sapato|sandalia|bolsa|carteira|relogio feminino/],
+    ["casa", /casa|decor|quarto|sala|banheiro|cama|mesa|banqueta|tapete|cortina|moveis|mobiliario/],
+    ["utilidades", /utilidade|ferramenta|automotivo|carro|pet|jardim|limpeza|organiz|suporte|acessorio/]
+  ];
+  for (const [categoria, regex] of grupos) if (regex.test(texto)) return categoria;
+  return "utilidades";
+}
+
+async function analisarImagemDiretor(p) {
+  const imagem = String(p.imagem || p.imageUrl || "").trim();
+  if (!imagem) return { status: "sem_imagem", fatos_visiveis: [], lacunas: ["Nenhuma imagem de anúncio disponível."] };
+  try {
+    const u = new URL(imagem);
+    const host = u.hostname.toLowerCase();
+    const permitido = /(^|\\.)susercontent\\.com$|(^|\\.)shopee\\.com(?:\\.br)?$/.test(host);
+    if (u.protocol !== "https:" || !permitido) {
+      return { status: "imagem_nao_permitida", fatos_visiveis: [], lacunas: ["A imagem não está em um domínio HTTPS permitido para análise."] };
+    }
+    const resposta = await fetch(u.href, { signal: AbortSignal.timeout(12000), headers: { "User-Agent": "ShopeeFilaDirector/1.0" } });
+    if (!resposta.ok) throw new Error("Download da imagem retornou HTTP " + resposta.status);
+    const tipo = String(resposta.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    if (!tipo.startsWith("image/")) throw new Error("O endereço não retornou uma imagem.");
+    const tamanho = Number(resposta.headers.get("content-length") || 0);
+    if (tamanho > 5 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
+    const bytes = Buffer.from(await resposta.arrayBuffer());
+    if (bytes.length > 5 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
+    const modelo = await modeloGemini();
+    const promptImagem = "Analise visualmente a imagem de anúncio de um produto para um sistema de criação de vídeos comerciais. Retorne SOMENTE JSON válido com: {\"tipo_produto_aparente\":\"...\",\"fatos_visiveis\":[\"...\"],\"cor_aparente\":\"... ou desconhecida\",\"materiais_visiveis\":[\"...\"],\"componentes_visiveis\":[\"...\"],\"uso_que_pode_ser_demonstrado\":[\"...\"],\"lacunas\":[\"...\"],\"alertas_fidelidade\":[\"...\"]}. Descreva somente o que é claramente visível. Não deduza material, tamanho, qualidade, capacidade, função ou benefício apenas pela aparência. Se houver texto na imagem, transcreva somente o que estiver legível e identifique como texto do anúncio, não como verificação independente. Se a imagem tiver vários itens, diferencie o produto principal dos acessórios. Nunca invente.";
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + modelo + ":generateContent?key=" + process.env.GEMINI_API_KEY, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptImagem }, { inlineData: { mimeType: tipo, data: bytes.toString("base64") } }] }],
+        generationConfig: { responseMimeType: "application/json", maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } }
+      }),
+      signal: AbortSignal.timeout(18000)
+    });
+    const j = await r.json();
+    const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\n");
+    if (!r.ok || !texto) throw new Error("Gemini Vision HTTP " + r.status + ": " + JSON.stringify(j).slice(0, 350));
+    return { status: "analisada", ...lerJson(texto) };
+  } catch (e) {
+    console.warn("Análise da imagem do Diretor IA:", e.message);
+    return { status: "indisponivel", fatos_visiveis: [], lacunas: ["Não foi possível analisar a imagem: " + e.message] };
+  }
+}
+
 export async function pesquisarEstrategia(p) {
   const nome = String(p.nome || p.productName || "produto").slice(0, 250);
-  // Envia à IA todos os dados que realmente existem no cadastro do produto.
-  // Métricas comerciais ficam fora do briefing criativo.
+  const categoria = categoriaDiretor(nome, p.categoria || p.category);
   const dadosProduto = {
     nome,
     item_id: p.item_id || p.itemId || null,
-    categoria_cadastrada: p.categoria || p.category || null,
     descricao: p.descricao || p.description || p.detalhes || null,
     imagem_anuncio: p.imagem || p.imageUrl || null,
     link_produto: p.link_produto || p.productLink || null,
@@ -250,18 +308,15 @@ export async function pesquisarEstrategia(p) {
   for (const k of Object.keys(dadosProduto)) {
     if (dadosProduto[k] === null || dadosProduto[k] === "") delete dadosProduto[k];
   }
-  // Usa a categoria cadastrada quando existe; evita gastar uma chamada de IA só para classificar.
-  const categoria = String(p.categoria || p.category || nome).slice(0, 80);
 
-  // Memória persistente: recupera aprendizados de produtos anteriores da mesma categoria.
+  const analiseImagem = await analisarImagemDiretor(p);
   let aprendizados = [];
   try {
-    const sb = db();
-    let q = sb.from("diretor_ia_memoria")
-      .select("produto_nome,categoria,formato_escolhido,gancho,estrutura_cenas,narracao,feedback,observacao,criado_em")
-      .ilike("categoria", categoria)
+    let q = db().from("diretor_ia_memoria")
+      .select("produto_nome,categoria,formato_escolhido,angulo_escolhido,gancho,estrutura_cenas,feedback,observacao,criado_em")
+      .eq("categoria", categoria)
       .order("criado_em", { ascending: false })
-      .limit(8);
+      .limit(10);
     if (p.id) q = q.neq("produto_id", p.id);
     const { data, error } = await q;
     if (error) console.warn("Memória Diretor IA:", error.message);
@@ -269,12 +324,11 @@ export async function pesquisarEstrategia(p) {
   } catch (e) { console.warn("Memória Diretor IA indisponível:", e.message); }
 
   const fontes = await pesquisarWebProduto(nome, categoria);
-  // Recupera também as estratégias anteriores do mesmo produto para variar a abordagem.
   let historicoProduto = [];
   try {
     if (p.id) {
       const { data, error } = await db().from("diretor_ia_memoria")
-        .select("formato_escolhido,gancho,feedback,observacao,criado_em")
+        .select("formato_escolhido,angulo_escolhido,gancho,feedback,observacao,criado_em")
         .eq("produto_id", p.id)
         .order("criado_em", { ascending: false })
         .limit(6);
@@ -282,62 +336,86 @@ export async function pesquisarEstrategia(p) {
       else historicoProduto = data || [];
     }
   } catch (e) { console.warn("Histórico do produto indisponível:", e.message); }
+
   const historicoTexto = historicoProduto.length
-    ? JSON.stringify(historicoProduto.map(x => ({ formato: x.formato_escolhido, gancho: x.gancho, avaliacao: x.feedback, observacao: x.observacao })))
+    ? JSON.stringify(historicoProduto.map(x => ({ formato: x.formato_escolhido, angulo: x.angulo_escolhido, gancho: x.gancho, avaliacao: x.feedback, observacao: x.observacao })))
     : "Nenhuma estratégia anterior registrada para este produto.";
   const memoriaTexto = aprendizados.length
     ? JSON.stringify(aprendizados.map(x => ({
-        produto: x.produto_nome, formato: x.formato_escolhido, gancho: x.gancho,
-        cenas: x.estrutura_cenas, narracao: x.narracao, avaliacao: x.feedback,
-        observacao: x.observacao
+        produto: x.produto_nome, formato: x.formato_escolhido, angulo: x.angulo_escolhido,
+        gancho: x.gancho, avaliacao: x.feedback, observacao: x.observacao
       })))
-    : "Ainda não há aprendizados anteriores nesta categoria. Faça uma análise independente e registre esta primeira experiência.";
+    : "Ainda não há aprendizados anteriores nesta categoria.";
 
-  const prompt = `Você é diretor de criação e roteirista especialista em vídeos curtos de produtos para afiliados da Shopee Brasil. Analise o produto e crie uma estratégia de vídeo que pareça conteúdo real de uma criadora/influenciadora, seja convincente, natural e visualmente claro. O objetivo é informar e despertar interesse de compra, sem inventar características.
+  const prompt = [
+    "Você é diretor de publicidade e performance especializado em vídeos curtos de afiliados da Shopee Brasil. Não seja apenas um gerador de cenas: pense como um vendedor consultivo e diretor audiovisual.",
+    "OBJETIVO: criar uma peça curta que prenda atenção, demonstre um benefício real, reduza uma objeção e estimule o clique. Não prometa vendas, viralização ou resultados.",
+    "DADOS DO PRODUTO: " + JSON.stringify(dadosProduto),
+    "ANÁLISE VISUAL DA IMAGEM (fatos visíveis e lacunas): " + JSON.stringify(analiseImagem),
+    "HISTÓRICO DO PRODUTO: " + historicoTexto,
+    "MEMÓRIA DA CATEGORIA " + categoria + ": " + memoriaTexto,
+    "FONTES E REFERÊNCIAS PÚBLICAS: " + JSON.stringify(fontes),
+    "ETAPA 1 — VERDADE DO PRODUTO: separe mentalmente fatos confirmados, fatos visíveis na imagem e lacunas. Use os dados do anúncio e a análise visual para fidelidade. Pesquisa web serve apenas para inspiração criativa, nunca como prova de atributos do produto. Não invente preço, desconto, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios.",
+    "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
+    "ETAPA 3 — ROTEIRO: escolha uma mensagem central e um público provável. Comece com ação visual imediatamente, sem logotipo ou introdução longa. Demonstre o produto em uso quando isso for possível e seguro. Trate no máximo uma objeção. Feche com CTA natural: conferir o produto no link/Shopee. Não simule depoimento ou experiência pessoal que não aconteceu.",
+    "ETAPA 4 — CLIPES GOOGLE FLOW: divida o vídeo em 2 a 4 clipes independentes, cada um com duração inteira de 4 a 10 segundos. A duração total deve ficar entre 16 e 30 segundos e ser exatamente a soma dos clipes. Cada clipe precisa funcionar como prompt separado para Flow. Descreva uma ação principal por clipe, enquadramento, movimento de câmera, luz, ambiente, fala exata em português brasileiro e texto curto na tela. Não misture muitas ações simultâneas. As falas devem ser curtas e caber naturalmente no tempo (aproximadamente 2 a 2,5 palavras por segundo). Se não precisar de fala, deixe fala vazia e use demonstração/texto.",
+    "CONTINUIDADE: crie um bloco de continuidade com identidade visual da pessoa (se houver), roupa, cenário, objetos de cena, iluminação, estilo de câmera e posição do produto. Repita as instruções essenciais desse bloco em TODOS os prompts de clipe. Se não houver necessidade de pessoa, não force uma modelo.",
+    "FIDELIDADE VISUAL: a imagem do anúncio é referência prioritária. Preserve forma, cor, proporções, estampa, marca, embalagem, componentes e quantidade visíveis. Não acrescente acessórios. Evite alterações de design, mãos deformadas, contato impossível, movimentos bruscos ou transições que escondam o item.",
+    "PROMPT FINAL: prompt_video deve ser um pacote pronto para copiar, com formato 9:16, estilo, bloco de continuidade e prompts separados numerados para cada clipe, incluindo duração, ação, câmera, fala, texto e instruções negativas. Não entregue uma descrição genérica.",
+    "VALIDAÇÃO: a soma das durações dos clipes deve ser igual a duracao_segundos. Cada clipe precisa ter de 4 a 10 segundos. A fala deve caber no tempo. Nenhuma afirmação pode exceder os dados ou o que está visível. Nota 0–100 mede adequação criativa estimada, não conversão.",
+    "RETORNE SOMENTE JSON válido, sem markdown, com este formato: " +
+    JSON.stringify({
+      categoria: categoria,
+      publico_alvo: "perfil provável, sem estereótipos",
+      beneficio_principal: "benefício demonstrável",
+      angulos_avaliados: [{ angulo: "nome", demonstrabilidade: 0, clareza_beneficio: 0, novidade: 0, risco_fidelidade: 0, motivo: "..." }],
+      angulo_escolhido: "...",
+      formato_escolhido: "...",
+      nota_adequacao: 0,
+      justificativa: "...",
+      gancho: "...",
+      duracao_segundos: 18,
+      continuidade: { pessoa: "... ou sem pessoa", roupa: "...", cenario: "...", iluminacao: "...", camera: "..." },
+      clipes: [{ numero: 1, duracao_segundos: 6, objetivo: "...", visual: "...", acao: "...", camera: "...", fala: "...", texto_tela: "...", prompt_flow: "prompt completo e individual para este clipe" }],
+      estrutura_cenas: [{ momento: "0–6s", visual: "...", objetivo: "...", camera: "...", acao: "..." }],
+      narracao: "...",
+      textos_tela: ["..."],
+      cta: "...",
+      prompt_video: "pacote completo pronto para copiar, com todos os prompts por clipe",
+      alertas: ["..."],
+      fontes_utilizadas: [{ titulo: "...", url: "...", contribuicao: "..." }],
+      limites_pesquisa: "..."
+    }) + ". Todos os campos devem conter dados reais da análise; não mantenha exemplos genéricos do esquema."
+  ].join("\n\n");
 
-BRIEFING REAL DO PRODUTO (dados recuperados do cadastro): ${JSON.stringify(dadosProduto)}
-INFORMAÇÕES AUSENTES: não interrompa a criação nem dê nota baixa apenas porque o cadastro não informa cor, modelo, quantidade ou detalhes. Crie uma estratégia útil usando o que está confirmado. Quando faltarem detalhes, proponha planos visuais neutros que mostrem o próprio item do anúncio, sem nomear nem afirmar características desconhecidas. Não invente falas específicas sobre tecido, bolso, elasticidade, composição, tamanho, acessórios ou funções. Se o nome for genérico, use uma apresentação visual segura e deixe claro em alertas quais detalhes devem ser conferidos na imagem original antes de gravar.
-NOTA CRIATIVA: avalie a qualidade da ideia e sua adequação ao formato, não a quantidade de campos preenchidos no cadastro. Uma estratégia visual genérica, mas fiel, pode receber nota razoável; não use 10/100 apenas por ausência de dados.
-HISTÓRICO DESTE MESMO PRODUTO: ${historicoTexto}
-APRENDIZADOS DE OUTROS PRODUTOS DA CATEGORIA: ${memoriaTexto}
-PRODUTO E FIDELIDADE: use somente informações comprovadas nos dados fornecidos e no anúncio original. Preserve exatamente modelo, cor, formato, estampa, marca, quantidade, acessórios e demais detalhes que puderem ser confirmados. O produto anunciado deve ser sempre o protagonista. Não invente materiais, funções, resultados, medidas, benefícios ou acessórios. Não faça afirmações absolutas como "zero transparência", "à prova d'água", "indestrutível", "resultado garantido" ou equivalentes, a menos que isso esteja explicitamente comprovado. Quando uma característica não estiver confirmada, mostre apenas o que é visível e descreva com neutralidade.
-
-FORMATO E DURAÇÃO: vídeo vertical 9:16 para TikTok, Reels e Shopee Video. Escolha duração entre 15 e 30 segundos conforme a quantidade de informações que realmente vale demonstrar; prefira 18 a 25 segundos. A duração escolhida deve ser respeitada pelo roteiro e pelo prompt final.
-
-ROTEIRO OBRIGATÓRIO: crie uma sequência de cenas com tempos que somem exatamente a duração total. Para cada cena, informe intervalo/tempo, imagem e ação, enquadramento ou movimento de câmera e objetivo. Comece com um gancho visual forte nos primeiros 1–2 segundos, mostrando o produto ou seu principal detalhe — não comece com apresentação longa, tela vazia ou logotipo. Em seguida, mostre o produto em uso real e seus detalhes importantes. Termine com uma chamada clara para conferir/comprar o produto na Shopee. Use cortes e transições simples e coerentes; não acelere tanto que impeça entender o produto.
-
-FALA DA INFLUENCIADORA: quando uma pessoa falando ajudar a vender/explicar, escreva a frase exata de abertura e todas as falas, em português brasileiro natural, como alguém recomendando um produto de verdade. Nunca deixe instruções vagas como "fala uma frase de abertura". A fala deve caber no tempo disponível, soar espontânea e explicar o produto sem exagero. Se o produto for melhor apresentado sem fala, justifique e use demonstração visual com textos curtos. Não invente depoimentos, experiência pessoal, teste ou opinião como se fossem reais.
-
-DEMONSTRAÇÃO E NATURALIDADE: descreva ações específicas e plausíveis que comprovem o uso: mãos manipulando o item, pessoa vestindo/usando, abrindo, encaixando, ligando ou demonstrando a função — somente quando aplicável ao produto. Mostre detalhes úteis em close-up. Para roupas, por exemplo, mostre frente, costas, caimento, costuras, cós, bolsos e tecido em movimento; se houver bolso, mostre o celular sendo colocado e retirado; só demonstre forro, elasticidade ou opacidade se isso estiver visível/comprovado. Para eletrônicos, mostre controles e funções reais. Para itens domésticos, mostre o uso cotidiano. As pessoas devem se mover de forma fluida e anatomicamente natural, sem poses robóticas, gestos bruscos, mãos deformadas, movimentos impossíveis ou contato incorreto com o produto. Preserve a continuidade da roupa, aparência da pessoa, cenário, iluminação e produto entre as cenas. Evite mostrar pele ou partes do corpo de forma desnecessária; enquadre para valorizar o produto com respeito e naturalidade.
-
-DIREÇÃO VISUAL: aparência profissional, iluminação que revele detalhes reais, enquadramentos variados (plano médio e close-ups), câmera estável com movimentos suaves e foco nítido no produto. Use cenário compatível com o uso real do item. A influenciadora, quando usada, deve interagir com o produto e olhar para a câmera nos momentos de fala; não deve apenas posar. Não use estética artificial exagerada nem efeitos que escondam o produto.
-
-TEXTOS NA TELA E ÁUDIO: proponha poucos textos curtos, legíveis e sincronizados com o detalhe mostrado. Cada afirmação deve ser comprovada pelos dados/imagens. Inclua legendas em português brasileiro para todas as falas. Sugira música de fundo discreta que não cubra a voz; não dependa de música protegida específica. Evite excesso de textos, emojis e efeitos.
-
-CTA: encerre com uma chamada compatível com a plataforma, como "Toque no link do produto e confira na Shopee" ou "Confira este produto na Shopee". Não use "arraste para cima", pois esse recurso pode não existir no formato/plataforma. Não prometa desconto, preço ou disponibilidade.
-
-PESQUISA E MEMÓRIA: use referências públicas e aprendizados anteriores apenas como inspiração de apresentação. Não trate resultados de busca como prova das características do produto. Aproveite estratégias aprovadas e evite abordagens rejeitadas, mas nunca sacrifique a fidelidade ao produto atual. Não invente métricas de visualização, vendas ou conversão.
-
-SAÍDA: retorne uma estratégia prática e pronta para produção, com gancho, duração, cenas cronometradas, falas exatas quando houver, textos na tela, CTA, prompt final completo para a ferramenta de vídeo e alertas sobre características que não podem ser afirmadas. O prompt final deve repetir as instruções essenciais de fidelidade visual, naturalidade, continuidade e áudio. Não limite o prompt final a uma descrição genérica: ele precisa conter as ações e falas específicas definidas no roteiro.
-
-Responda SOMENTE JSON válido neste formato:
-{"categoria":"...","formato_escolhido":"...","nota_adequacao":0,"justificativa":"...","padroes_observados":["..."],"gancho":"...","duracao_segundos":18,"estrutura_cenas":[{"momento":"0–2s","visual":"...","objetivo":"...","camera":"...","acao":"..."}],"narracao":"...","textos_tela":["..."],"cta":"...","prompt_video":"...","alertas":["..."],"fontes_utilizadas":[{"titulo":"...","url":"...","contribuicao":"..."}],"limites_pesquisa":"..."}
-A soma dos tempos das cenas deve ser igual a duracao_segundos. A fala deve estar escrita integralmente, nunca apenas indicada. A nota é de adequação criativa estimada (0–100), não previsão de visualizações ou vendas. Use somente fontes listadas acima em fontes_utilizadas; se nenhuma for confiável, deixe a lista vazia e diga isso em limites_pesquisa.`
-
-;
   const resultado = await iaJsonDiretor(prompt);
-  const promptVideo = String(resultado.prompt_video || "").slice(0, 4000);
+  const clipes = resultado.clipes.map((c, i) => ({
+    ...c,
+    numero: Number(c.numero || i + 1),
+    duracao_segundos: Number(c.duracao_segundos),
+    prompt_flow: String(c.prompt_flow || "").trim()
+  }));
+  const duracao = clipes.reduce((s, c) => s + c.duracao_segundos, 0);
+  if (duracao !== Number(resultado.duracao_segundos) || clipes.some(c => c.duracao_segundos < 4 || c.duracao_segundos > 10 || !c.prompt_flow)) {
+    throw new Error("A estratégia retornada não passou na validação dos clipes. Gere novamente.");
+  }
+  if (duracao < 16 || duracao > 30) throw new Error("A duração total deve ficar entre 16 e 30 segundos.");
+  const promptVideo = String(resultado.prompt_video || "").trim().slice(0, 12000);
   if (!resultado.formato_escolhido || !promptVideo) throw new Error("A IA não retornou uma estratégia completa.");
   const estrategia = {
     ...resultado,
     categoria,
+    analise_imagem: analiseImagem,
     fontes_pesquisadas: fontes,
+    clipes,
+    estrutura_cenas: Array.isArray(resultado.estrutura_cenas) && resultado.estrutura_cenas.length
+      ? resultado.estrutura_cenas
+      : clipes.map(c => ({ momento: c.duracao_segundos + "s", visual: c.visual, objetivo: c.objetivo, camera: c.camera, acao: c.acao })),
     pesquisado_em: new Date().toISOString(),
     prompt_video: promptVideo,
     memoria_utilizada: aprendizados.length
   };
 
-  // Registra cada consulta como experiência para as próximas análises.
   try {
     const { error } = await db().from("diretor_ia_memoria").insert({
       produto_id: p.id || null,
@@ -345,6 +423,7 @@ A soma dos tempos das cenas deve ser igual a duracao_segundos. A fala deve estar
       produto_nome: nome,
       categoria,
       formato_escolhido: estrategia.formato_escolhido,
+      angulo_escolhido: estrategia.angulo_escolhido || null,
       gancho: estrategia.gancho || null,
       estrutura_cenas: estrategia.estrutura_cenas || [],
       narracao: estrategia.narracao || null,

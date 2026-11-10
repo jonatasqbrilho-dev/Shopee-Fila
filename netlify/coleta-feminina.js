@@ -47,7 +47,7 @@ export async function coletarCategoria(categoria="feminina"){
     try{
       const candidatos=[];
       for(let page=1;page<=PAGINAS && candidatos.length<80;page++){
-        const d=await shopee(`{ productOfferV2(keyword: ${JSON.stringify(kw)}, sortType: 2, page: ${page}, limit: 20) { nodes { ${CAMPOS} } pageInfo { hasNextPage } } }`);
+        const d=await shopee(`{ productOfferV2(keyword: ${JSON.stringify(kw)}, listType: 0, sortType: 2, page: ${page}, limit: 20) { nodes { ${CAMPOS} } pageInfo { hasNextPage } } }`);
         const nodes=d?.productOfferV2?.nodes||[];
         item.encontrados+=nodes.length;
         for(const n of nodes){

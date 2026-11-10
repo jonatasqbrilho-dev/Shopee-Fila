@@ -165,7 +165,7 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
   const limite = setTimeout(() => controladores.forEach(c => c.abort()), 50000);
   const validar = async (chamar) => {
     const resposta = await chamar();
-    if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length) {
+    if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length || !Array.isArray(resposta?.ganchos) || resposta.ganchos.length !== 3) {
       throw new Error("O provedor retornou uma estratégia incompleta ou sem roteiro.");
     }
     // O Diretor IA entrega um único vídeo de 15 segundos, não uma sequência de clipes.
@@ -640,9 +640,14 @@ export async function pesquisarEstrategia(p) {
   ];
   for (const tag of tagsBase) if (hashtags.length < 5 && !hashtags.some(x => normalizarTexto(x) === normalizarTexto(tag))) hashtags.push(tag);
   const corpoLegenda = legendaSegura(resultado.legenda || (palavraChave + ". Confira no link!"));
+  const tagsFinal = hashtags.slice(0, 5);
+  const textoTags = tagsFinal.join(" ");
+  const limiteCorpo = Math.max(0, 149 - textoTags.length);
   const semTags = corpoLegenda.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
-  const legendaFinal = (semTags + " " + hashtags.slice(0, 5).join(" ")).trim();
-  const legenda = legendaSegura(legendaFinal);
+  const corpoCurto = semTags.length > limiteCorpo
+    ? semTags.slice(0, limiteCorpo).replace(/\s+\S*$/, "").trim()
+    : semTags;
+  const legenda = (corpoCurto + " " + textoTags).trim();
   const quantidadeHashtags = (legenda.match(/#[\p{L}\p{N}_]+/gu) || []).length;
   if (!legenda || legenda.length > 150 || palavras(legenda).length > 35 || quantidadeHashtags < 3) {
     throw new Error("A legenda não passou na validação de até 150 caracteres e 3 hashtags.");

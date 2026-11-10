@@ -3,7 +3,7 @@ export const DURACAO_PADRAO_DIRETOR = 10;
 export const LIMITE_FALA_DIRETOR = 22;
 export function extrairQuantidadeKit(nome, descricao = "", caracteristicas = "", variacao = "") {
   const texto = [nome, descricao, caracteristicas, variacao].filter(Boolean).join(" ").toLowerCase();
-  const match = texto.match(/\\bkit\\s+(?:com\\s+|de\\s+)?(\\d{1,2})\\b|\\b(\\d{1,2})\\s*(?:peças?|pecas?|unidades?|unid\\.?)\\b/i);
+  const match = texto.match(/\bkit\s+(?:com\s+|de\s+)?(\d{1,2})\b|\b(\d{1,2})\s*(?:peças?|pecas?|unidades?|unid\.?)\b/i);
   const quantidade = Number(match?.[1] || match?.[2] || 0);
   return Number.isInteger(quantidade) && quantidade >= 2 && quantidade <= 50 ? quantidade : null;
 }

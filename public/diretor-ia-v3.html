@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diretor de Vídeos IA · Shopee Fila</title>
+
+<style>
+:root{color-scheme:light;--bg:#f4f6f5;--card:#fff;--ink:#202522;--muted:#66716b;--line:#dce2dd;--orange:#ee4d2d;--green:#16803c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}header{background:#fff;border-bottom:1px solid var(--line);padding:16px}header .bar,main{max-width:1000px;margin:auto}header .bar{display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:21px;margin:0}main{padding:20px 14px 60px}.sub,.muted{color:var(--muted);font-size:13px}.panel,.result{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}.controls{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:220px}label{font-size:12px;font-weight:750;color:var(--muted)}select,input{font:inherit;padding:11px;border:1px solid #cfd6d0;border-radius:9px;background:#fff;color:var(--ink);width:100%}button,.btn{border:0;border-radius:9px;padding:11px 15px;background:#252a27;color:#fff;font:700 13px system-ui;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}.primary{background:var(--orange)}.light{background:#edf0ed;color:#202522;border:1px solid var(--line)}button:disabled{opacity:.55;cursor:wait}.message{padding:10px;border-radius:9px;background:#eef5ee;margin-bottom:12px;white-space:pre-wrap}.hidden{display:none!important}.score{font-size:30px;font-weight:850;color:var(--green)}.tag{display:inline-block;padding:4px 9px;border-radius:20px;background:#fff0e8;color:#983c22;font-size:12px;font-weight:700;margin:3px}.section{border-top:1px solid var(--line);padding-top:12px;margin-top:14px}.source{padding:10px 0;border-bottom:1px solid var(--line)}.source:last-child{border:0}.source a{color:#b63d22;font-weight:700}.scene{padding:10px;margin:8px 0;background:#f7f8f7;border-radius:9px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,monospace;background:#f6f7f6;padding:12px;border-radius:9px}@media(max-width:600px){header .bar{align-items:flex-start;flex-direction:column}.field{min-width:100%}}
+</style></head><body>
+<header><div class="bar"><div><h1>🧠 Diretor de Vídeos IA</h1><div class="sub">Pesquisa referências públicas e escolhe a melhor apresentação para cada produto</div></div><a class="btn light" href="/">← Voltar ao painel</a></div></header>
+<main><div id="message" class="message hidden"></div>
+<section class="panel"><h2 style="font-size:17px;margin:0 0 12px">Escolha um produto</h2><div class="controls"><div class="field"><label>PRODUTO CADASTRADO</label><select id="product"><option value="">Carregando produtos…</option></select></div><button id="research" class="primary">🔎 Pesquisar e escolher estratégia</button></div><p class="muted">A IA pesquisa resultados públicos na web, identifica padrões de apresentação e cria uma estratégia original. A nota indica adequação criativa, não garantia de visualizações ou vendas.</p></section>
+<div id="result" class="hidden"></div>
+</main>
+<script>
+const API="/.netlify/functions/fila", $=id=>document.getElementById(id);let products=[];
+function senha(){let s=localStorage.getItem("senha");if(!s){s=prompt("Digite a senha do Shopee Fila:");if(s)localStorage.setItem("senha",s)}return s||""}
+async function api(body){const r=await fetch(API,{method:"POST",headers:{"x-senha":senha(),"content-type":"application/json"},body:JSON.stringify(body)});const j=await r.json().catch(()=>({erro:"Resposta inválida"}));if(!r.ok||j.ok===false)throw Error(j.erro||"Falha na solicitação");return j}
+async function get(path){const r=await fetch(path,{headers:{"x-senha":senha()}});const j=await r.json().catch(()=>({erro:"Resposta inválida do servidor"}));if(!r.ok)throw Error(j.erro||("Falha ao carregar produtos (HTTP "+r.status+")"));return j}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function msg(t,err=false){$("message").textContent=t;$("message").classList.remove("hidden");$("message").style.background=err?"#fff0ef":"#eef5ee"}
+async function load(){$("product").innerHTML='<option value="">Carregando produtos…</option>';$("product").disabled=true;try{const arr=await get(API+"?todos=1");products=Array.isArray(arr)?arr:[];$("product").innerHTML='<option value="">— Selecione um produto —</option>'+products.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.nome)+' · '+esc(p.status||"")+'</option>').join("");if(!products.length){msg("Nenhum produto foi encontrado. Confira se os produtos estão cadastrados na Fila.",true)}const requested=new URLSearchParams(location.search).get("produto");if(requested&&products.some(p=>String(p.id)===requested)){$("product").value=requested;$("product").dispatchEvent(new Event("change"));msg("Produto carregado automaticamente. Você já pode pesquisar uma estratégia para ele.")}}catch(e){$("product").innerHTML='<option value="">Falha ao carregar produtos</option>';msg("Não foi possível carregar a lista: "+e.message,true)}finally{$("product").disabled=false}}
+function render(e){
+ const sources=e.fontes_utilizadas||e.fontes_pesquisadas||[];
+ const scenes=e.estrutura_cenas||[];
+ const clips=e.clipes||[];
+ const angles=e.angulos_avaliados||[];
+ const continuity=e.continuidade||{};
+ $("result").classList.remove("hidden");
+ $("result").innerHTML='<section class="result"><div class="muted">ESTRATÉGIA RECOMENDADA</div><h2 style="margin:4px 0">'+esc(e.formato_escolhido)+'</h2><div class="score">'+esc(e.nota_adequacao??"—")+'/100</div><div class="muted">Adequação criativa estimada · '+esc(e.duracao_segundos||15)+' segundos · '+esc(e.categoria||"")+'</div><p>'+esc(e.justificativa||"")+'</p>'+
+ '<div class="section"><b>Benefício principal</b><p>'+esc(e.beneficio_principal||"")+'</p><b>Público provável</b><p>'+esc(e.publico_alvo||"")+'</p><b>Ângulo escolhido</b><p>'+esc(e.angulo_escolhido||"")+'</p></div>'+
+ (angles.length?'<div class="section"><b>Ângulos avaliados</b>'+angles.map(a=>'<div class="scene"><b>'+esc(a.angulo||"")+'</b><div class="muted">Demonstração: '+esc(a.demonstrabilidade??"—")+'/10 · Benefício: '+esc(a.clareza_beneficio??"—")+'/10 · Novidade: '+esc(a.novidade??"—")+'/10 · Risco: '+esc(a.risco_fidelidade??"—")+'/10</div><div>'+esc(a.motivo||"")+'</div></div>').join("")+'</div>':'')+
+ (e.analise_imagem?'<div class="section"><b>Análise da imagem do produto</b><div class="muted">Status: '+esc(e.analise_imagem.status||"não informado")+'</div><p>'+esc(e.analise_imagem.tipo_produto_aparente||"")+'</p><b>O que foi identificado visualmente</b><ul>'+(e.analise_imagem.fatos_visiveis||[]).map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><b>Lacunas</b><ul>'+(e.analise_imagem.lacunas||[]).map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul></div>':'')+
+ '<div class="section"><b>Gancho</b><p>'+esc(e.gancho||"")+'</p></div><div class="section"><b>Bloco de continuidade</b><div class="scene">'+esc(Object.entries(continuity).map(([k,v])=>k+": "+v).join("\n"))+'</div></div>'+
+ '<div class="section"><b>Vídeo único de 10 segundos para Google Flow</b><p class="muted">Um único vídeo vertical, contínuo e completo, com duração exata de 10 segundos.</p>'+
+ clips.map((cl,i)=>'<div class="scene"><b>Vídeo único · '+esc(cl.duracao_segundos)+' segundos</b><div><b>Objetivo:</b> '+esc(cl.objetivo||"")+'</div><div><b>Ação:</b> '+esc(cl.acao||cl.visual||"")+'</div><div><b>Câmera:</b> '+esc(cl.camera||"")+'</div>'+(cl.fala?'<div><b>Fala:</b> '+esc(cl.fala)+'</div>':'')+(cl.texto_tela?'<div><b>Texto na tela:</b> '+esc(cl.texto_tela)+'</div>':'')+'<pre>'+esc(cl.prompt_flow||"")+'</pre><button class="light" data-copy-clip="'+i+'">Copiar prompt do vídeo</button></div>').join("")+'</div>'+
+ '<div class="section"><b>Estrutura resumida</b>'+scenes.map(s=>'<div class="scene"><b>'+esc(s.momento||"")+'</b><div>'+esc(s.visual||"")+'</div><div class="muted">'+esc(s.objetivo||"")+'</div></div>').join("")+'</div>'+
+ '<div class="section"><b>Narração sugerida</b><p>'+esc(e.narracao||"")+'</p><b>Textos na tela</b><ul>'+(e.textos_tela||[]).map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><b>Chamada final</b><p>'+esc(e.cta||"")+'</p></div>'+
+ <div class="section"><b>Referências encontradas</b>'+(sources.length?sources.map(s=>'<div class="source"><a href="'+esc(s.url||"#")+'" target="_blank" rel="noopener">'+esc(s.titulo||s.title||s.url)+'</a><div class="muted">'+esc(s.contribuicao||s.snippet||"")+'</div></div>').join(""):'<p class="muted">Nenhuma fonte externa foi considerada suficientemente relevante. Estratégia baseada na análise do produto.</p>')+'</div>'+
+ '<div class="section"><b>Ajude a IA a aprender</b><p class="muted">Sua avaliação será guardada e considerada nas próximas análises desta categoria.</p><input id="memoryNote" placeholder="O que ficou bom ou precisa melhorar? (opcional)" maxlength="500"><div class="actions"><button class="primary" id="memoryGood">👍 Gostei desta estratégia</button><button class="light" id="memoryBad">👎 Não gostei</button></div></div><div class="section muted">'+esc(e.limites_pesquisa||"Pesquisa em fontes públicas; métricas de desempenho não foram verificadas.")+'</div><div class="actions"><button class="primary" id="copyFull">📋 Copiar estratégia completa</button></div></section>';
+ $("copyPrompt").onclick=()=>navigator.clipboard.writeText(e.prompt_video||"").then(()=>msg("Prompt completo copiado."));
+ $("copyFull").onclick=()=>navigator.clipboard.writeText(JSON.stringify(e,null,2)).then(()=>msg("Estratégia completa copiada."));
+ document.querySelectorAll("[data-copy-clip]").forEach(btn=>btn.onclick=()=>{const i=Number(btn.getAttribute("data-copy-clip"));navigator.clipboard.writeText(clips[i]?.prompt_flow||"").then(()=>msg("Prompt do vídeo copiado."))});
+ const avaliar=async feedback=>{const id=$("product").value;if(!id)return;const a=$("memoryGood"),b=$("memoryBad");a.disabled=b.disabled=true;try{await api({acao:"avaliar_estrategia",id,feedback,observacao:$("memoryNote")?.value||""});msg(feedback==="aprovado"?"Avaliação salva! A IA vai considerar esta estratégia nas próximas análises.":"Feedback salvo! A IA vai evitar repetir esta abordagem.");}catch(err){msg(err.message,true)}finally{a.disabled=b.disabled=false}};
+ $("memoryGood").onclick=()=>avaliar("aprovado");$("memoryBad").onclick=()=>avaliar("rejeitado");
+}
+$("research").onclick=async()=>{
+ const id=$("product").value;if(!id){msg("Selecione um produto primeiro.",true);return}
+ const b=$("research");b.disabled=true;b.textContent="⏳ Preparando pesquisa…";$("result").classList.add("hidden");
+ try{
+   const preparado=await api({acao:"preparar_estrategia",id});
+   const disparo=await fetch("/.netlify/functions/diretor-ia-background",{method:"POST",headers:{"x-senha":senha(),"content-type":"application/json"},body:JSON.stringify({id,job_id:preparado.job_id})});
+   if(!disparo.ok&&disparo.status!==202)throw Error("Não foi possível iniciar o processamento em segundo plano (HTTP "+disparo.status+").");
+   b.textContent="⏳ Analisando imagem e criando vídeo de 10 segundos…";
+   msg("Pesquisa iniciada. O processamento continuará no servidor.");
+   for(let i=0;i<120;i++){
+     await new Promise(resolve=>setTimeout(resolve,2500));
+     const status=await api({acao:"obter_estrategia",id});
+     const p=status.produto||{};
+     if(p.diretor_ia_status==="completed"&&p.video_estrategia){render(p.video_estrategia);msg("Estratégia concluída e salva. O prompt único de 10 segundos está pronto para copiar.");return}
+     if(p.diretor_ia_status==="error")throw Error(p.diretor_ia_erro||"O Diretor IA não conseguiu concluir a pesquisa.");
+     if(i%8===0)msg(p.diretor_ia_status==="running"?"Analisando o produto e criando o prompt único de 10 segundos…":"Tarefa na fila. Aguardando o processamento do servidor…");
+   }
+   msg("A pesquisa continua no servidor. Se ainda não concluiu, selecione o produto novamente em alguns instantes para consultar o resultado.");
+ }catch(err){msg(err.message,true)}
+ finally{b.disabled=false;b.textContent="🔎 Pesquisar e escolher estratégia"}
+}
+$("product").onchange=async()=>{const p=products.find(x=>x.id===$("product").value);if(!p)return;try{const j=await api({acao:"obter_estrategia",id:p.id});if(j.produto?.video_estrategia?.formato_escolhido)render(j.produto.video_estrategia);else $("result").classList.add("hidden")}catch{}};
+load().catch(e=>msg(e.message,true));
+</script></body></html>

@@ -119,7 +119,8 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
     const falaOriginal = String(primeiro.fala || resposta.narracao || "").trim();
     const nomeCurto = nomeCurtoFalado(produtoNome || resposta.produto_nome || resposta.produto);
     let fala = falaOriginal
-      ? falaOriginal.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 30).join(" ")
+      ? falaOriginal.replace(new RegExp(String(produtoNome || "").replace(/[.*+?^${}()|[\]\\]/g, "\\let fala = falaOriginal
+      ? falaOriginal.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 30).join(" ")"), "ig"), nomeCurto).replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 30).join(" ")
       : "Olha só esse produto!";
     fala = fala.replace(/sem transparência[^.!?]*/ig, "").replace(/transparência[^.!?]*/ig, "").replace(/conforto total/ig, "praticidade").replace(/\s{2,}/g, " ").trim();
     if (!/\b(link|compre|comprar|garanta|garantir|confira)\b/i.test(fala)) fala = (fala ? fala.replace(/[.!?]+$/, "") + ". " : "") + "Clique no link e confira!";
@@ -377,17 +378,17 @@ async function analisarImagemDiretor(p) {
 
 function nomeCurtoFalado(nome) {
   const original = String(nome || "produto").trim();
-  const n = original.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
-  if (/\\bmacacao\\b/.test(n)) return /\\bshort\\s+saia\\b/.test(n) ? "macacão short saia" : "macacão";
-  if (/\\bconjunto\\b/.test(n)) return /\\bacademia|fitness|treino\\b/.test(n) ? "conjunto de academia" : "conjunto";
-  if (/\\bvestido\\b/.test(n)) return "vestido";
-  if (/\\blegging\\b/.test(n)) return "legging";
-  if (/\\btop\\b/.test(n)) return "top";
-  if (/\\bshort\\b/.test(n)) return /\\bsaia\\b/.test(n) ? "short saia" : "short";
-  if (/\\bgarrafa\\b/.test(n)) return "garrafa";
-  if (/\\bfone\\b/.test(n)) return "fone";
+  const n = original.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/\bmacacao\b/.test(n)) return /\bshort\s+saia\b/.test(n) ? "macacão short saia" : "macacão";
+  if (/\bconjunto\b/.test(n)) return /\b(academia|fitness|treino)\b/.test(n) ? "conjunto de academia" : "conjunto";
+  if (/\bvestido\b/.test(n)) return "vestido";
+  if (/\blegging\b/.test(n)) return "legging";
+  if (/\btop\b/.test(n)) return "top";
+  if (/\bshort\b/.test(n)) return /\bsaia\b/.test(n) ? "short saia" : "short";
+  if (/\bgarrafa\b/.test(n)) return "garrafa";
+  if (/\bfone\b/.test(n)) return "fone";
   const ignorar = new Set(["feminino","feminina","masculino","masculina","unissex","tecido","liso","lisa","estampado","estampada","novo","nova","premium","original","adulto","adulta","infantil","com","para","de","da","do","e"]);
-  const palavras = original.split(/\\s+/).filter(p => !ignorar.has(p.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")));
+  const palavras = original.split(/\s+/).filter(p => !ignorar.has(p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
   return palavras.slice(0, 3).join(" ") || "produto";
 }
 
@@ -458,7 +459,7 @@ export async function pesquisarEstrategia(p) {
     "FONTES E REFERÊNCIAS PÚBLICAS: " + JSON.stringify(fontes),
     "ETAPA 1 — VERDADE DO PRODUTO: separe mentalmente fatos confirmados no anúncio, fatos visíveis na imagem e lacunas. Pesquisa web serve apenas para inspiração criativa, nunca como prova de atributos. O benefício principal deve descrever uma utilidade diretamente sustentada por uma característica confirmada; não transforme presença de bolso em promessa de segurança, nem forro em promessa de sustentação, conforto ou desempenho. Se não houver benefício comprovável, descreva objetivamente o que o produto oferece, sem inventar uma vantagem. Não invente preço, desconto, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios. Alegações promocionais no título (como zero transparência, à prova d'água, antialérgico, compressão ou durabilidade) não são fatos verificados só por aparecerem no anúncio.",
     "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
-    "ETAPA 3 — ROTEIRO OBRIGATÓRIO: a fala precisa dizer claramente o NOME DO PRODUTO (use uma versão curta, mas reconhecível, do nome exato do anúncio) e apresentar PELO MENOS DOIS benefícios ou características úteis, reais e confirmados nos dados do anúncio ou claramente visíveis. Não basta dizer apenas 'olha esse produto', 'confira este item' ou mostrar o produto sem identificá-lo. Estruture a fala em português brasileiro: nome do produto + dois benefícios/características confirmados + CTA. Exemplo de estrutura, não copie literalmente: 'Essa [nome do produto] tem [característica/benefício 1] e [característica/benefício 2]. Clique e confira!'. Se não houver dois benefícios comprováveis, cite duas características objetivas confirmadas, sem inventar vantagens. Comece com o produto visível nos primeiros 2 segundos, demonstre ao menos uma característica real em ação quando for possível e seguro. A fala deve soar espontânea, específica e caber naturalmente em 10 segundos; priorize clareza do nome e das duas características em vez de frases genéricas. Não simule depoimento ou experiência pessoal que não aconteceu.",
+    "ETAPA 3 — ROTEIRO OBRIGATÓRIO: a fala precisa dizer claramente o NOME DO PRODUTO (use uma versão curta, mas reconhecível, do nome exato do anúncio) e apresentar PELO MENOS DOIS benefícios ou características úteis, reais e confirmados nos dados do anúncio ou claramente visíveis. Não basta dizer apenas 'olha esse produto', 'confira este item' ou mostrar o produto sem identificá-lo. Estruture a fala em português brasileiro: nome do produto + dois benefícios/características confirmados + CTA. Exemplo de estrutura, não copie literalmente: 'Essa [nome do produto] tem [característica/benefício 1] e [característica/benefício 2]. Clique e confira!'. Se não houver dois benefícios comprováveis, cite duas características objetivas confirmadas, sem inventar vantagens. Comece com o produto visível nos primeiros 2 segundos, demonstre ao menos uma característica real em ação quando for possível e seguro. A fala deve soar espontânea, específica e caber naturalmente em 15 segundos; use um nome curto de 2 a 4 palavras, nunca leia o título completo do anúncio. Não simule depoimento ou experiência pessoal que não aconteceu.",
     "ETAPA 4 — VÍDEO ÚNICO PARA GOOGLE FLOW: retorne apenas UM vídeo, UM clipe e UM prompt_flow, com duração EXATA de 15 segundos, formato vertical 9:16. Não divida em cenas ou partes. Use 0–3s para gancho visual com produto visível; 3–9s para apresentar uma ou duas características confirmadas; 9–15s para recomendação e CTA. Tudo em uma única tomada contínua. Escolha o melhor meio de apresentação. A fala deve ser natural, em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo) e caber em 15 segundos sem acelerar. O prompt_flow deve ser completo e pronto para colar no Flow, contendo produto, cenário, apresentador quando adequado, ação contínua, câmera, luz, fala, texto, áudio e restrições de fidelidade. Sem cortes ou transições.",
     "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente a peça anunciada, sem adicionar roupa por cima nem alterar cor, corte ou modelo. Em 15 segundos, use ações simples e realistas para apresentar a peça. Não tente provar ausência de transparência com a mão, alongamento, agachamento ou teste visual; não afirme que o tecido não fica transparente. Só demonstre detalhes visíveis/confirmados. Nunca levantar, puxar ou expor a roupa. A fala deve usar nome curto e destacar somente elementos confirmados.",
     "CONTINUIDADE: crie um bloco compacto com identidade visual da pessoa (se houver), roupa igual à referência, cenário, iluminação e câmera. Como existe apenas um vídeo contínuo, não descreva vários clipes nem repita instruções por clipe. Se uma pessoa não acrescentar valor, escolha mãos, demonstração ou produto em destaque.",
@@ -478,12 +479,12 @@ export async function pesquisarEstrategia(p) {
       gancho: "...",
       duracao_segundos: 15,
       continuidade: { pessoa: "... ou sem pessoa", roupa: "...", cenario: "...", iluminacao: "...", camera: "..." },
-      clipes: [{ numero: 1, duracao_segundos: 15, objetivo: "apresentar e vender em um único vídeo", visual: "...", acao: "...", camera: "...", fala: "...", texto_tela: "...", prompt_flow: "um único prompt completo para vídeo contínuo de 10 segundos" }],
+      clipes: [{ numero: 1, duracao_segundos: 15, objetivo: "apresentar e vender em um único vídeo", visual: "...", acao: "...", camera: "...", fala: "...", texto_tela: "...", prompt_flow: "um único prompt completo para vídeo contínuo de 15 segundos" }],
       estrutura_cenas: [{ momento: "0–15s", visual: "...", objetivo: "...", camera: "...", acao: "..." }],
       narracao: "...",
       textos_tela: ["..."],
       cta: "...",
-      prompt_video: "um único prompt completo pronto para copiar para vídeo de 10 segundos",
+      prompt_video: "um único prompt completo pronto para copiar para vídeo de 15 segundos",
       alertas: ["..."],
       fontes_utilizadas: [{ titulo: "...", url: "...", contribuicao: "..." }],
       limites_pesquisa: "..."

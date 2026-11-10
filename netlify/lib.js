@@ -13,36 +13,65 @@ export async function shopee(query) {
   const j = await r.json(); if (j.errors) throw new Error(JSON.stringify(j.errors)); return j.data;
 }
 
-const lerJson = (t) => JSON.parse(String(t).replace(/<think>[\s\S]*?<\/think>/g, "").match(/\{[\s\S]*\}/)?.[0] || "{}");
+const lerJson = (texto) => {
+  const limpo = String(texto || "")
+    .replace(/<think>[\\s\\S]*?<\\/think>/g, "")
+    .replace(/^```(?:json)?\\s*/i, "")
+    .replace(/\\s*```$/i, "")
+    .trim();
+  try { return JSON.parse(limpo); } catch {}
+  let inicio = -1, profundidade = 0, emString = false, escape = false;
+  for (let i = 0; i < limpo.length; i++) {
+    const c = limpo[i];
+    if (emString) {
+      if (escape) escape = false;
+      else if (c === "\\\\") escape = true;
+      else if (c === '"') emString = false;
+      continue;
+    }
+    if (c === '"') { emString = true; continue; }
+    if (c === "{") { if (profundidade === 0) inicio = i; profundidade++; }
+    if (c === "}") {
+      profundidade--;
+      if (profundidade === 0 && inicio >= 0) {
+        try { return JSON.parse(limpo.slice(inicio, i + 1)); } catch {}
+        inicio = -1;
+      }
+    }
+  }
+  throw new Error("A IA retornou JSON incompleto ou inválido. Tente novamente.");
+};
 let pGroq, pGemini;
 // Prefere modelo menor e evita uma chamada extra à API de listagem de modelos.
 const modeloGroq = () => (pGroq ??= Promise.resolve(process.env.GROQ_MODEL || "openai/gpt-oss-20b"));
-async function groq(prompt) {
+async function groq(prompt, options = {}) {
   try {
     const model = await modeloGroq();
     const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method:"POST",
       headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"},
-      body:JSON.stringify({model,messages:[{role:"user",content:prompt}],max_completion_tokens:1400,response_format:{type:"json_object"}}),
-      signal:AbortSignal.timeout(2500)
+      body:JSON.stringify({model,messages:[{role:"user",content:prompt}],max_completion_tokens:options.maxTokens || 1400,...(options.reasoningEffort?{reasoning_effort:options.reasoningEffort}:{}),response_format:{type:"json_object"}}),
+      signal:options.signal || AbortSignal.timeout(options.timeoutMs || 2500)
     });
     const j=await r.json();
-    if(!r.ok || !j.choices) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,240));
+    if(!r.ok || !j.choices?.[0]?.message?.content) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,300));
+    if (j.choices[0].finish_reason === "length") throw new Error("Groq cortou a resposta por limite de tokens.");
     return lerJson(j.choices[0].message.content);
   } catch(e){pGroq=undefined;throw e;}
 }
 // Usa um modelo Flash estável sem consultar a lista de modelos a cada execução.
 const modeloGemini = () => Promise.resolve(process.env.GEMINI_MODEL || "gemini-2.5-flash");
-async function gemini(prompt) {
+async function gemini(prompt, options = {}) {
   try {
     const model=await modeloGemini();
     const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,{
       method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",maxOutputTokens:1400}}),
-      signal:AbortSignal.timeout(2500)
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",maxOutputTokens:options.maxTokens || 1400,...(options.thinkingBudget !== undefined?{thinkingConfig:{thinkingBudget:options.thinkingBudget}}:{})}}),
+      signal:options.signal || AbortSignal.timeout(options.timeoutMs || 2500)
     });
     const j=await r.json();
-    if(!r.ok || !j.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error("Gemini HTTP "+r.status+": "+JSON.stringify(j).slice(0,240));
+    if(!r.ok || !j.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error("Gemini HTTP "+r.status+": "+JSON.stringify(j).slice(0,300));
+    if (j.candidates[0].finishReason === "MAX_TOKENS") throw new Error("Gemini cortou a resposta por limite de tokens.");
     return lerJson(j.candidates[0].content.parts[0].text);
   } catch(e){pGemini=undefined;throw e;}
 }
@@ -52,6 +81,25 @@ async function iaJson(prompt){
     try{return await chamar(prompt)}catch(e){erros.push(nome+": "+e.message);console.error("IA:",nome,e.message)}
   }
   throw new Error("Os serviços de IA não responderam. "+erros.join(" | "));
+}
+
+// O Diretor IA produz uma estratégia extensa: usa os dois provedores em paralelo,
+// com mais tempo e tokens, e encerra a chamada perdedora assim que uma resposta válida chega.
+async function iaJsonDiretor(prompt) {
+  const controladores = [new AbortController(), new AbortController()];
+  const limite = setTimeout(() => controladores.forEach(c => c.abort()), 20000);
+  try {
+    return await Promise.any([
+      groq(prompt, { signal: controladores[0].signal, maxTokens: 4096, reasoningEffort: "low" }),
+      gemini(prompt, { signal: controladores[1].signal, maxTokens: 4096, thinkingBudget: 0 })
+    ]);
+  } catch (e) {
+    const motivos = (e.errors || [e]).map(x => x?.message || String(x));
+    throw new Error("O Diretor IA não conseguiu concluir a estratégia. " + motivos.join(" | "));
+  } finally {
+    clearTimeout(limite);
+    controladores.forEach(c => c.abort());
+  }
 }
 
 const limitarLegenda=texto=>{let s=String(texto||"").replace(/\s+/g," ").trim();if(s.length<=150)return s;return s.slice(0,150).replace(/\s+\S*$/," ").trim();};
@@ -270,7 +318,7 @@ Responda SOMENTE JSON válido neste formato:
 A soma dos tempos das cenas deve ser igual a duracao_segundos. A fala deve estar escrita integralmente, nunca apenas indicada. A nota é de adequação criativa estimada (0–100), não previsão de visualizações ou vendas. Use somente fontes listadas acima em fontes_utilizadas; se nenhuma for confiável, deixe a lista vazia e diga isso em limites_pesquisa.`
 
 ;
-  const resultado = await iaJson(prompt);
+  const resultado = await iaJsonDiretor(prompt);
   const promptVideo = String(resultado.prompt_video || "").slice(0, 4000);
   if (!resultado.formato_escolhido || !promptVideo) throw new Error("A IA não retornou uma estratégia completa.");
   const estrategia = {

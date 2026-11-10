@@ -2,13 +2,13 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]);
 const ALLOWED_HOSTS = [
-  /(^|\\.)susercontent\\.com$/i,
-  /(^|\\.)shopee\\.com\\.br$/i,
-  /(^|\\.)tiktokcdn\\.com$/i,
-  /(^|\\.)tiktokcdn-us\\.com$/i,
-  /(^|\\.)byteoversea\\.com$/i,
-  /(^|\\.)ibytedtos\\.com$/i,
-  /(^|\\.)tiktokv\\.com$/i
+  /(^|\.)susercontent\.com$/i,
+  /(^|\.)shopee\.com\.br$/i,
+  /(^|\.)tiktokcdn\.com$/i,
+  /(^|\.)tiktokcdn-us\.com$/i,
+  /(^|\.)byteoversea\.com$/i,
+  /(^|\.)ibytedtos\.com$/i,
+  /(^|\.)tiktokv\.com$/i
 ];
 
 function validarDestino(url) {

@@ -14,6 +14,8 @@ create table if not exists produtos (
   motivo text,
   legenda text,
   video_prompt text,
+  video_estrategia jsonb,
+  video_pesquisado_em timestamptz,
   video_roteiro text,
   video_narracao text,
   video_textos text,
@@ -34,12 +36,22 @@ create table if not exists produtos (
   status text not null default 'pendente',
   plataformas text[] not null default '{}',
   video_url text,
+  mpt_task_id text,
+  mpt_status text,
+  mpt_video_url text,
+  mpt_atualizado_em timestamptz,
   telegram_ok boolean not null default false,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
 
 alter table produtos add column if not exists video_prompt text;
+alter table produtos add column if not exists video_estrategia jsonb;
+alter table produtos add column if not exists video_pesquisado_em timestamptz;
+alter table produtos add column if not exists mpt_task_id text;
+alter table produtos add column if not exists mpt_status text;
+alter table produtos add column if not exists mpt_video_url text;
+alter table produtos add column if not exists mpt_atualizado_em timestamptz;
 alter table produtos add column if not exists video_roteiro text;
 alter table produtos add column if not exists video_narracao text;
 alter table produtos add column if not exists video_textos text;

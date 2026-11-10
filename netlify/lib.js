@@ -539,7 +539,7 @@ export async function pesquisarEstrategia(p) {
     "CONTINUIDADE: crie um bloco compacto com identidade visual da pessoa (se houver), roupa igual à referência, cenário, iluminação e câmera. Como existe apenas um vídeo contínuo, não descreva vários clipes nem repita instruções por clipe. Se uma pessoa não acrescentar valor, escolha mãos, demonstração ou produto em destaque.",
     "FIDELIDADE VISUAL: a imagem do anúncio é referência prioritária. Preserve forma, cor, proporções, estampa, marca, embalagem, componentes e quantidade visíveis. Não acrescente acessórios nem invente detalhes. Evite alterações de design, mãos deformadas, contato impossível, movimentos bruscos ou transições que escondam o item. Para roupas, não crie camadas de roupa que escondam a peça anunciada.",
     "PROMPT FINAL: prompt_video deve conter um único prompt pronto para copiar, em formato 9:16 e duração exata de 15 segundos. A fala deve ser audível, sincronizada e em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo do anúncio), mencionar uma ou duas características reais confirmadas e terminar com CTA. Use até 30 palavras, sem acelerar. Nunca transforme alegação promocional do título em fato comprovado. Não invente teste, resultado ou experiência pessoal. O prompt deve conter produto, apresentação, cenário, ação contínua, câmera, luz, fala, texto e áudio.",
-    "VALIDAÇÃO: retorne exatamente um clipe com duracao_segundos igual a 15 e apenas um prompt_flow. O vídeo deve ser contínuo, sem cortes, e conter gancho, apresentação e CTA dentro dos mesmos 15 segundos. A fala deve usar nome curto e caber no tempo. Nenhuma afirmação pode exceder os dados ou o que está visível. Nota 0–100 mede adequação criativa estimada, não conversão.",
+    "VALIDAÇÃO: retorne exatamente um clipe com duracao_segundos igual a 10 e apenas um prompt_flow. O vídeo deve ser contínuo, sem cortes, e conter gancho, apresentação e CTA dentro dos mesmos 15 segundos. A fala deve usar nome curto e caber no tempo. Nenhuma afirmação pode exceder os dados ou o que está visível. Nota 0–100 mede adequação criativa estimada, não conversão.",
     "RETORNE SOMENTE JSON válido, sem markdown, com este formato: " +
     JSON.stringify({
       categoria: categoria,
@@ -613,7 +613,7 @@ export async function pesquisarEstrategia(p) {
     throw new Error("A legenda não passou na validação de até 150 caracteres e 3 hashtags.");
   }
   const falaValidada = String(clipes[0].fala || "");
-  if (palavras(falaValidada).length > 30) throw new Error("A fala ultrapassou 30 palavras; gere novamente.");
+  if (palavras(falaValidada).length > LIMITE_FALA_DIRETOR) throw new Error("A fala ultrapassou 30 palavras; gere novamente.");
   const continuidadeValidada = validarContinuidade(resultado.continuidade);
   const estrategia = {
     ...resultado,

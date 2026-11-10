@@ -78,19 +78,39 @@ async function gemini(prompt, options = {}) {
   } catch(e){pGemini=undefined;throw e;}
 }
 // Chamada Gemini exclusiva do Diretor IA, isolada do fluxo legado.
+// Se o modelo principal estiver sobrecarregado, tenta novamente e usa um Flash alternativo.
 async function geminiDiretor(prompt, options = {}) {
-  const model = await modeloGeminiDiretor();
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", maxOutputTokens: options.maxTokens || 4096, ...(options.thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget: options.thinkingBudget } } : {}) } }),
-    signal: options.signal || AbortSignal.timeout(options.timeoutMs || 20000)
-  });
-  const j = await r.json();
-  const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\n");
-  if (!r.ok || !texto) throw new Error("Gemini Diretor HTTP " + r.status + ": " + JSON.stringify(j).slice(0, 450));
-  if (j.candidates?.[0]?.finishReason === "MAX_TOKENS") throw new Error("Gemini Diretor cortou a resposta por limite de tokens.");
-  return lerJson(texto);
+  const principal = await modeloGeminiDiretor();
+  const modelos = [...new Set([principal, "gemini-2.5-flash"])];
+  const erros = [];
+  const repetiveis = [429, 500, 502, 503, 504];
+  for (const model of modelos) {
+    for (let tentativa = 1; tentativa <= 2; tentativa++) {
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", maxOutputTokens: options.maxTokens || 4096, ...(options.thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget: options.thinkingBudget } } : {}) } }),
+          signal: options.signal || AbortSignal.timeout(options.timeoutMs || 18000)
+        });
+        const j = await r.json().catch(() => ({}));
+        const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\\n");
+        if (r.ok && texto) {
+          if (j.candidates?.[0]?.finishReason === "MAX_TOKENS") throw new Error("Gemini Diretor cortou a resposta por limite de tokens.");
+          return lerJson(texto);
+        }
+        const detalhe = "Gemini Diretor " + model + " HTTP " + r.status + ": " + JSON.stringify(j).slice(0, 350);
+        erros.push(detalhe);
+        if (!repetiveis.includes(r.status)) throw new Error(detalhe);
+      } catch (e) {
+        if (e.name === "AbortError" || e.name === "TimeoutError") throw e;
+        if (!erros.includes(e.message)) erros.push(e.message);
+        if (!/HTTP (429|500|502|503|504)/.test(e.message)) throw e;
+      }
+      if (tentativa < 2) await new Promise(resolve => setTimeout(resolve, 900 * tentativa));
+    }
+  }
+  throw new Error(erros.slice(-4).join(" | ") || "Modelos Gemini indisponíveis.");
 }
 
 async function iaJson(prompt){
@@ -105,7 +125,7 @@ async function iaJson(prompt){
 // com mais tempo e tokens, e encerra a chamada perdedora assim que uma resposta válida chega.
 async function iaJsonDiretor(prompt, produtoNome = "produto") {
   const controladores = [new AbortController(), new AbortController()];
-  const limite = setTimeout(() => controladores.forEach(c => c.abort()), 20000);
+  const limite = setTimeout(() => controladores.forEach(c => c.abort()), 50000);
   const validar = async (chamar) => {
     const resposta = await chamar();
     if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length) {
@@ -174,7 +194,7 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
   try {
     return await Promise.any([
       validar(() => groq(prompt, { signal: controladores[0].signal, maxTokens: 4096, reasoningEffort: "low" })),
-      validar(() => geminiDiretor(prompt, { signal: controladores[1].signal, maxTokens: 4096, thinkingBudget: 0 }))
+      validar(() => geminiDiretor(prompt, { signal: controladores[1].signal, maxTokens: 4096, thinkingBudget: 0, timeoutMs: 18000 }))
     ]);
   } catch (e) {
     const motivos = (e.errors || [e]).map(x => x?.message || String(x));

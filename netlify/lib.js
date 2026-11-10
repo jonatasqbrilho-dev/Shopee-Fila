@@ -314,13 +314,12 @@ export async function pesquisarEstrategia(p) {
   try {
     let q = db().from("diretor_ia_memoria")
       .select("produto_nome,categoria,formato_escolhido,angulo_escolhido,gancho,estrutura_cenas,feedback,observacao,criado_em")
-      .eq("categoria", categoria)
       .order("criado_em", { ascending: false })
-      .limit(10);
+      .limit(80);
     if (p.id) q = q.neq("produto_id", p.id);
     const { data, error } = await q;
     if (error) console.warn("Memória Diretor IA:", error.message);
-    else aprendizados = data || [];
+    else aprendizados = (data || []).filter(x => categoriaDiretor(x.produto_nome, x.categoria) === categoria).slice(0, 10);
   } catch (e) { console.warn("Memória Diretor IA indisponível:", e.message); }
 
   const fontes = await pesquisarWebProduto(nome, categoria);

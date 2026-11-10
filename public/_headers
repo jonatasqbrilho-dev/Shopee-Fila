@@ -1,3 +1,7 @@
 /diretor-ia*
   Cache-Control: no-store, no-cache, must-revalidate, max-age=0
   Netlify-CDN-Cache-Control: no-store
+
+/diretor-ia-v3.html
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Netlify-CDN-Cache-Control: no-store

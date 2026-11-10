@@ -61,6 +61,8 @@ async function groq(prompt, options = {}) {
 }
 // Usa um modelo Flash estável sem consultar a lista de modelos a cada execução.
 const modeloGemini = () => Promise.resolve(process.env.GEMINI_MODEL || "gemini-2.5-flash");
+// Modelo exclusivo do Diretor IA; mantém o provedor do fluxo legado inalterado.
+const modeloGeminiDiretor = () => Promise.resolve("gemini-3.8-flash");
 async function gemini(prompt, options = {}) {
   try {
     const model=await modeloGemini();
@@ -75,6 +77,22 @@ async function gemini(prompt, options = {}) {
     return lerJson(j.candidates[0].content.parts[0].text);
   } catch(e){pGemini=undefined;throw e;}
 }
+// Chamada Gemini exclusiva do Diretor IA, isolada do fluxo legado.
+async function geminiDiretor(prompt, options = {}) {
+  const model = await modeloGeminiDiretor();
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", maxOutputTokens: options.maxTokens || 4096, ...(options.thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget: options.thinkingBudget } } : {}) } }),
+    signal: options.signal || AbortSignal.timeout(options.timeoutMs || 20000)
+  });
+  const j = await r.json();
+  const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\n");
+  if (!r.ok || !texto) throw new Error("Gemini Diretor HTTP " + r.status + ": " + JSON.stringify(j).slice(0, 450));
+  if (j.candidates?.[0]?.finishReason === "MAX_TOKENS") throw new Error("Gemini Diretor cortou a resposta por limite de tokens.");
+  return lerJson(texto);
+}
+
 async function iaJson(prompt){
   const erros=[];
   for(const [nome,chamar] of [["Groq",groq],["Gemini",gemini]]){
@@ -93,17 +111,39 @@ async function iaJsonDiretor(prompt) {
     if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length) {
       throw new Error("O provedor retornou uma estratégia incompleta ou sem clipes.");
     }
-    const duracoes = resposta.clipes.map(c => Number(c.duracao_segundos));
-    if (duracoes.some(n => !Number.isInteger(n) || n < 4 || n > 10) ||
-        duracoes.reduce((a, n) => a + n, 0) !== Number(resposta.duracao_segundos)) {
-      throw new Error("Os clipes não respeitam as durações de 4 a 10 segundos ou a duração total.");
+    if (resposta.clipes.length < 2 || resposta.clipes.length > 4) {
+      throw new Error("A estratégia precisa ter de 2 a 4 clipes.");
     }
+    // Corrige durações inconsistentes antes de aceitar a estratégia.
+    // Cada clipe fica entre 4 e 10 s; o total fica entre 16 e 30 s.
+    const duracoes = resposta.clipes.map(c => {
+      const n = Math.round(Number(c.duracao_segundos));
+      return Number.isFinite(n) ? Math.max(4, Math.min(10, n)) : 6;
+    });
+    const minimoTotal = 16, maximoTotal = Math.min(30, duracoes.length * 10);
+    let total = Math.max(minimoTotal, Math.min(maximoTotal, duracoes.reduce((a, n) => a + n, 0)));
+    let diferenca = total - duracoes.reduce((a, n) => a + n, 0);
+    for (let i = 0; i < duracoes.length && diferenca !== 0; i++) {
+      const ajuste = diferenca > 0 ? Math.min(10 - duracoes[i], diferenca) : -Math.min(duracoes[i] - 4, -diferenca);
+      duracoes[i] += ajuste;
+      diferenca -= ajuste;
+    }
+    total = duracoes.reduce((a, n) => a + n, 0);
+    resposta.clipes = resposta.clipes.map((c, i) => ({
+      ...c,
+      numero: i + 1,
+      duracao_segundos: duracoes[i],
+      prompt_flow: ("DURAÇÃO EXATA DESTE CLIPE: " + Number(c.duracao_segundos) + " segundos. Gere somente esta cena, sem prolongar nem encurtar.\\n" + String(c.prompt_flow || "").trim())
+        .replace(/(?:dura[cç][aã]o|duration)\\s*:?\\s*\\d+\\s*(?:s|segundos?)?/gi, "")
+        .trim()
+    }));
+    resposta.duracao_segundos = total;
     return resposta;
   };
   try {
     return await Promise.any([
       validar(() => groq(prompt, { signal: controladores[0].signal, maxTokens: 4096, reasoningEffort: "low" })),
-      validar(() => gemini(prompt, { signal: controladores[1].signal, maxTokens: 4096, thinkingBudget: 0 }))
+      validar(() => geminiDiretor(prompt, { signal: controladores[1].signal, maxTokens: 4096, thinkingBudget: 0 }))
     ]);
   } catch (e) {
     const motivos = (e.errors || [e]).map(x => x?.message || String(x));
@@ -271,7 +311,7 @@ async function analisarImagemDiretor(p) {
     if (tamanho > 5 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
     const bytes = Buffer.from(await resposta.arrayBuffer());
     if (bytes.length > 5 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
-    const modelo = await modeloGemini();
+    const modelo = await modeloGeminiDiretor();
     const promptImagem = "Analise visualmente a imagem de anúncio de um produto para um sistema de criação de vídeos comerciais. Retorne SOMENTE JSON válido com: {\"tipo_produto_aparente\":\"...\",\"fatos_visiveis\":[\"...\"],\"cor_aparente\":\"... ou desconhecida\",\"materiais_visiveis\":[\"...\"],\"componentes_visiveis\":[\"...\"],\"uso_que_pode_ser_demonstrado\":[\"...\"],\"lacunas\":[\"...\"],\"alertas_fidelidade\":[\"...\"]}. Descreva somente o que é claramente visível. Não deduza material, tamanho, qualidade, capacidade, função ou benefício apenas pela aparência. Se houver texto na imagem, transcreva somente o que estiver legível e identifique como texto do anúncio, não como verificação independente. Se a imagem tiver vários itens, diferencie o produto principal dos acessórios. Nunca invente.";
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + modelo + ":generateContent?key=" + process.env.GEMINI_API_KEY, {
       method: "POST",
@@ -360,7 +400,7 @@ export async function pesquisarEstrategia(p) {
     "ETAPA 1 — VERDADE DO PRODUTO: separe mentalmente fatos confirmados, fatos visíveis na imagem e lacunas. Use os dados do anúncio e a análise visual para fidelidade. Pesquisa web serve apenas para inspiração criativa, nunca como prova de atributos do produto. Não invente preço, desconto, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios.",
     "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
     "ETAPA 3 — ROTEIRO: escolha uma mensagem central e um público provável. Comece com ação visual imediatamente, sem logotipo ou introdução longa. Demonstre o produto em uso quando isso for possível e seguro. Trate no máximo uma objeção. Feche com CTA natural: conferir o produto no link/Shopee. Não simule depoimento ou experiência pessoal que não aconteceu.",
-    "ETAPA 4 — CLIPES GOOGLE FLOW: divida o vídeo em 2 a 4 clipes independentes, cada um com duração inteira de 4 a 10 segundos. A duração total deve ficar entre 16 e 30 segundos e ser exatamente a soma dos clipes. Cada clipe precisa funcionar como prompt separado para Flow e ter prompt_flow completo, específico e pronto para colar (idealmente 500 a 900 caracteres por clipe). Estruture cada clipe com: formato 9:16 e duração; descrição precisa do produto baseada na imagem; pessoa/ambiente; enquadramento e lente; ação física contínua com começo, meio e fim; movimento de câmera; luz; fala exata em português brasileiro; texto na tela; áudio ambiente; continuidade; e restrições para evitar deformações. Não use frases telegráficas ou apenas listas de atributos. Uma ação principal por clipe. As falas devem caber naturalmente no tempo (aproximadamente 2 a 2,5 palavras por segundo).",
+    "ETAPA 4 — CLIPES GOOGLE FLOW: divida o vídeo em 2 a 4 clipes independentes, cada um com duração inteira de 4 a 10 segundos. A duração total deve ficar entre 16 e 30 segundos e ser exatamente a soma dos clipes. Use preferencialmente 3 clipes de 6 segundos (total 18s). Preencha duracao_segundos de cada clipe com número inteiro e repita a duração exata no início do prompt_flow. Nunca use intervalos de tempo cumulativos como duração de clipe; a duração é individual. Cada clipe precisa funcionar como prompt separado para Flow e ter prompt_flow completo, específico e pronto para colar (idealmente 500 a 900 caracteres por clipe). Estruture cada clipe com: formato 9:16 e duração; descrição precisa do produto baseada na imagem; pessoa/ambiente; enquadramento e lente; ação física contínua com começo, meio e fim; movimento de câmera; luz; fala exata em português brasileiro; texto na tela; áudio ambiente; continuidade; e restrições para evitar deformações. Não use frases telegráficas ou apenas listas de atributos. Uma ação principal por clipe. As falas devem caber naturalmente no tempo (aproximadamente 2 a 2,5 palavras por segundo).",
     "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente o conjunto/peça da imagem de referência, sem adicionar outra roupa por cima, sem trocar cor, corte, estampa ou modelo. Mostrar o look em plano médio e corpo inteiro, com movimentos naturais e elegantes: virar levemente de frente para o lado, caminhar poucos passos, fazer movimento de treino leve e seguro quando fizer sentido. Só demonstrar bolso se ele estiver visível/confirmado; só colocar celular no bolso se o bolso estiver claramente presente. Nunca mandar levantar, puxar ou expor a roupa, nem fazer enquadramento sexualizado. Não inventar tecido, compressão, sustentação, transparência ou caimento. A alegação 'zero transparência' só pode ser atribuída ao anúncio, não tratada como algo comprovado pela foto. O objetivo é mostrar o conjunto vestindo bem e em uso real, com a peça sempre visível.",
     "CONTINUIDADE: crie um bloco de continuidade com identidade visual da pessoa (se houver), roupa EXATAMENTE igual à referência do produto, cenário, objetos de cena, iluminação, estilo de câmera e posição do produto. Repita as instruções essenciais desse bloco em TODOS os prompts de clipe. Se não houver necessidade de pessoa, não force uma modelo. Não descreva roupa alternativa que cubra o produto.",
     "FIDELIDADE VISUAL: a imagem do anúncio é referência prioritária. Preserve forma, cor, proporções, estampa, marca, embalagem, componentes e quantidade visíveis. Não acrescente acessórios nem invente detalhes. Evite alterações de design, mãos deformadas, contato impossível, movimentos bruscos ou transições que escondam o item. Para roupas, não crie camadas de roupa que escondam a peça anunciada.",

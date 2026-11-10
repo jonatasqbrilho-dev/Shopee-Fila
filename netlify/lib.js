@@ -94,7 +94,7 @@ async function geminiDiretor(prompt, options = {}) {
           signal: options.signal || AbortSignal.timeout(options.timeoutMs || 18000)
         });
         const j = await r.json().catch(() => ({}));
-        const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\\n");
+        const texto = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || "").join("\n");
         if (r.ok && texto) {
           if (j.candidates?.[0]?.finishReason === "MAX_TOKENS") throw new Error("Gemini Diretor cortou a resposta por limite de tokens.");
           return lerJson(texto);

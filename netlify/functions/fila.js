@@ -131,11 +131,12 @@ export default async(req)=>{
     const escolhido = (p.video_estrategia.ganchos || []).find(g => g.tipo === b.gancho.tipo && g.texto === b.gancho.texto);
     if (!escolhido) return json({ erro: "Esse gancho não pertence à estratégia salva." }, 400);
     const estrategia = { ...p.video_estrategia, gancho_escolhido: escolhido };
-    const prompt = String(estrategia.prompt_video || "").replace(/Gancho: [^\r\n]*/i, "Gancho: " + escolhido.texto + " Abertura visual: " + escolhido.abertura_visual);
+    const aplicarGancho = texto => String(texto || "").replace(/Gancho: [^\r\n]*(?:\r?\nAbertura visual: [^\r\n]*)?/i, "Gancho: " + escolhido.texto + "\nAbertura visual: " + escolhido.abertura_visual);
+    const prompt = aplicarGancho(estrategia.prompt_video);
     estrategia.prompt_video = prompt;
     estrategia.clipes = (estrategia.clipes || []).map(c => ({
       ...c,
-      prompt_flow: String(c.prompt_flow || "").replace(/Gancho: [^\r\n]*/i, "Gancho: " + b.gancho.texto + " Abertura visual: " + b.gancho.abertura_visual)
+      prompt_flow: aplicarGancho(c.prompt_flow)
     }));
     const { error: saveError } = await sb.from("produtos").update({
       video_estrategia: estrategia,

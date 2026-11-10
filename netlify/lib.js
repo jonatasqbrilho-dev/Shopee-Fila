@@ -103,7 +103,7 @@ async function iaJson(prompt){
 
 // O Diretor IA produz uma estratégia extensa: usa os dois provedores em paralelo,
 // com mais tempo e tokens, e encerra a chamada perdedora assim que uma resposta válida chega.
-async function iaJsonDiretor(prompt) {
+async function iaJsonDiretor(prompt, produtoNome = "produto") {
   const controladores = [new AbortController(), new AbortController()];
   const limite = setTimeout(() => controladores.forEach(c => c.abort()), 20000);
   const validar = async (chamar) => {
@@ -117,15 +117,16 @@ async function iaJsonDiretor(prompt) {
     const continuidade = resposta.continuidade || {};
     const juntar = (campo) => clipesOriginais.map(c => String(c?.[campo] || "").trim()).filter(Boolean).join(" ");
     const falaOriginal = juntar("fala");
-    const fala = falaOriginal
-      ? falaOriginal.split(/[.!?]/).map(x => x.trim()).filter(Boolean).slice(0, 2).join(". ") + (falaOriginal.trim().endsWith(".") ? "." : "")
-      : "Olha só esse produto! Confira os detalhes e aproveite para garantir o seu pelo link.";
+    let fala = falaOriginal
+      ? falaOriginal.replace(/\\s+/g, " ").trim().split(/\\s+/).slice(0, 17).join(" ")
+      : "Olha só esse produto!";
+    if (!/\\b(link|compre|comprar|garanta|garantir|confira)\\b/i.test(fala)) fala += " Confira e compre pelo link!";
     const detalhes = [
       "VÍDEO ÚNICO, CONTÍNUO E COMPLETO — duração EXATA de 10 segundos, formato vertical 9:16.",
       "Apresente o produto imediatamente no primeiro segundo. Escolha a melhor forma de apresentação para este item: uma pessoa falando diretamente com a câmera, demonstração com as mãos, uso real ou enquadramento do próprio produto. Não force uma modelo quando ela não acrescentar valor.",
       "Em uma única tomada fluida, sem cortes entre cenas: comece com um gancho visual, demonstre rapidamente o principal benefício ou característica confirmada e termine com uma recomendação convincente e um convite claro para clicar no link e comprar.",
       "A apresentação deve soar como uma pessoa real recomendando o produto a quem está assistindo: fala natural, simpática, segura, persuasiva e em português brasileiro. A fala deve caber integralmente em 10 segundos, sem locução acelerada.",
-      "Produto anunciado: " + String(dadosProduto?.nome || resposta.produto || "produto"),
+      "Produto anunciado: " + String(produtoNome || resposta.produto_nome || resposta.produto || "produto"),
       continuidade.pessoa ? "Pessoa/apresentador: " + continuidade.pessoa : "Escolha apresentador, mãos ou demonstração sem pessoa conforme a melhor solução para o produto.",
       continuidade.roupa ? "Roupa: " + continuidade.roupa : "",
       continuidade.cenario ? "Cenário: " + continuidade.cenario : "",
@@ -454,7 +455,7 @@ export async function pesquisarEstrategia(p) {
     }) + ". Todos os campos devem conter dados reais da análise; não mantenha exemplos genéricos do esquema."
   ].join("\n\n");
 
-  const resultado = await iaJsonDiretor(prompt);
+  const resultado = await iaJsonDiretor(prompt, nome);
   const clipes = resultado.clipes.map((c, i) => ({
     ...c,
     numero: Number(c.numero || i + 1),

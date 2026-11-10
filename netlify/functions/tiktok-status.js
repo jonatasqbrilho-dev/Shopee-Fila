@@ -7,13 +7,13 @@ export default async function handler(req) {
 
   const store = getStore({ name: "tiktok-auth", consistency: "strong" });
   const data = await store.get("main-account", { type: "json" });
-  if (!data) return new Response(JSON.stringify({ connected: false }), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } });
-
-  return json({
+  const resultado = data ? {
     connected: true,
     open_id: data.open_id || null,
     scope: data.scope || "",
     connected_at: data.connected_at || null,
     expires_at: data.expires_at || null
-  }, 200, { "cache-control": "no-store" });
+  } : { connected: false };
+
+  return new Response(JSON.stringify(resultado), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 }

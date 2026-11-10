@@ -632,14 +632,20 @@ export async function pesquisarEstrategia(p) {
     const t = String(x || "").replace(/[^#\p{L}\p{N}_]/gu, "");
     return t.startsWith("#") ? t : "#" + t;
   }).filter(x => /^#[\p{L}\p{N}_]{2,}$/u.test(x)))].slice(0, 5);
-  while (hashtags.length < 3) {
-    const termos = palavraChave.split(/\s+/);
-    const h = "#" + termos.slice(0, Math.max(1, 3 - hashtags.length)).join("").replace(/[^\p{L}\p{N}]/gu, "");
-    if (!hashtags.includes(h)) hashtags.push(h); else break;
-  }
-  const legenda = legendaSegura(resultado.legenda || (palavraChave + " para o dia a dia. Confira no link! " + hashtags.join(" ")));
-  if (!legenda || legenda.length > 150 || palavras(legenda).length > 35) {
-    throw new Error("A legenda não passou na validação de até 150 caracteres.");
+  const termosTag = palavraChave.split(/\s+/).filter(Boolean);
+  const tagsBase = [
+    "#" + (termosTag[0] || "produto").replace(/[^\p{L}\p{N}]/gu, ""),
+    "#" + (termosTag.slice(0, 2).join("").replace(/[^\p{L}\p{N}]/gu, "") || "achadinhos"),
+    "#ShopeeAchados"
+  ];
+  for (const tag of tagsBase) if (hashtags.length < 5 && !hashtags.some(x => normalizarTexto(x) === normalizarTexto(tag))) hashtags.push(tag);
+  const corpoLegenda = legendaSegura(resultado.legenda || (palavraChave + ". Confira no link!"));
+  const semTags = corpoLegenda.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
+  const legendaFinal = (semTags + " " + hashtags.slice(0, 5).join(" ")).trim();
+  const legenda = legendaSegura(legendaFinal);
+  const quantidadeHashtags = (legenda.match(/#[\p{L}\p{N}_]+/gu) || []).length;
+  if (!legenda || legenda.length > 150 || palavras(legenda).length > 35 || quantidadeHashtags < 3) {
+    throw new Error("A legenda não passou na validação de até 150 caracteres e 3 hashtags.");
   }
   const falaValidada = String(clipes[0].fala || "");
   if (palavras(falaValidada).length > 30) throw new Error("A fala ultrapassou 30 palavras; gere novamente.");
@@ -656,7 +662,6 @@ export async function pesquisarEstrategia(p) {
     continuidade: continuidadeValidada,
     modelo_flow: modeloFlow,
     limite_clipe_segundos: limiteClipe,
-    ...
     categoria,
     analise_imagem: analiseImagem,
     fontes_pesquisadas: fontes,

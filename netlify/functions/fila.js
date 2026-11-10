@@ -99,26 +99,10 @@ export default async(req)=>{
   if(b.acao==="gerar_conteudo"){
     const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);
     try{
-      // Pesquisa e direção criativa acontecem automaticamente no mesmo botão.
-      const estrategia=await pesquisarEstrategia(p);
-      const contextoEstrategia=[
-        p.motivo||"",
-        "DIREÇÃO CRIATIVA PESQUISADA AUTOMATICAMENTE:",
-        "Formato escolhido: "+String(estrategia.formato_escolhido||""),
-        "Justificativa: "+String(estrategia.justificativa||""),
-        "Gancho: "+String(estrategia.gancho||""),
-        "Estrutura: "+JSON.stringify(estrategia.estrutura_cenas||[]),
-        "Narração sugerida: "+String(estrategia.narracao||""),
-        "Textos na tela: "+JSON.stringify(estrategia.textos_tela||[]),
-        "CTA: "+String(estrategia.cta||""),
-        "Prompt de direção: "+String(estrategia.prompt_video||""),
-        "Alertas de fidelidade: "+JSON.stringify(estrategia.alertas||[])
-      ].filter(Boolean).join("\\n");
-      const c=await gerarConteudo({...p,motivo:contextoEstrategia});
-      const agora=new Date().toISOString();
-      const {error:e}=await sb.from("produtos").update({nota:c.nota,motivo:c.motivo,legenda:c.legenda,video_prompt:c.video_prompt,video_estrategia:estrategia,video_pesquisado_em:estrategia.pesquisado_em||agora,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[],pacote_gerado_em:agora,atualizado_em:agora}).eq("id",b.id);
-      return e?json({erro:e.message},500):json({ok:true,conteudo:{...c,estrategia}});
-    }catch(e){return json({erro:"Não foi possível concluir a pesquisa e gerar o conteúdo: "+e.message},500)}
+      const c=await gerarConteudo(p);
+      const {error:e}=await sb.from("produtos").update({nota:c.nota,motivo:c.motivo,legenda:c.legenda,video_prompt:c.video_prompt,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[],pacote_gerado_em:new Date().toISOString(),atualizado_em:new Date().toISOString()}).eq("id",b.id);
+      return e?json({erro:e.message},500):json({ok:true,conteudo:c});
+    }catch(e){return json({erro:e.message},500)}
   }
   if(b.acao==="gerar_links"){const {data:p,error}=await sb.from("produtos").select("*").eq("id",b.id).single();if(error||!p)return json({erro:error?.message||"Produto não encontrado"},404);const r=await gerarLinks(p),links=r.out,subs=["tiktok","youtube","instagram","telegram"].map(k=>platformSub(p,k));const {error:e}=await sb.from("produtos").update({links_plataforma:links,sub_ids:subs,atualizado_em:new Date().toISOString()}).eq("id",b.id);if(e)return json({erro:e.message},500);const gerados=Object.values(links).filter(Boolean).length;return gerados?json({ok:true,links,gerados,total:4}):json({erro:"Shopee não gerou nenhum link.",detalhes:r.erros},400);}
   if(b.acao==="sincronizar_metricas"){try{return json({ok:true,...await sincronizarConversoes(sb)});}catch(e){return json({erro:e.message},500)}}

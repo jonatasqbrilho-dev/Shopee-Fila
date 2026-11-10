@@ -24,7 +24,7 @@ async function groq(prompt) {
       method:"POST",
       headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"},
       body:JSON.stringify({model,messages:[{role:"user",content:prompt}],max_completion_tokens:1400,response_format:{type:"json_object"}}),
-      signal:AbortSignal.timeout(4500)
+      signal:AbortSignal.timeout(2500)
     });
     const j=await r.json();
     if(!r.ok || !j.choices) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,240));
@@ -33,7 +33,7 @@ async function groq(prompt) {
 }
 const modeloGemini = () => (pGemini ??= (async () => {
   if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
-  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${process.env.GEMINI_API_KEY}`,{signal:AbortSignal.timeout(3500)}),j=await r.json(); if(!j.models) throw new Error("Gemini modelos: "+JSON.stringify(j).slice(0,200));
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${process.env.GEMINI_API_KEY}`,{signal:AbortSignal.timeout(1200)}),j=await r.json(); if(!j.models) throw new Error("Gemini modelos: "+JSON.stringify(j).slice(0,200));
   const nomes=j.models.filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent")).map(m=>m.name.replace("models/",""));
   return nomes.filter(n=>/^gemini-\d+(\.\d+)?-flash$/.test(n)).sort((a,b)=>parseFloat(b.split("-")[1])-parseFloat(a.split("-")[1]))[0] || nomes.find(n=>/flash/.test(n)&&!/image|tts|live|embed/.test(n)) || nomes[0];
 })());
@@ -43,7 +43,7 @@ async function gemini(prompt) {
     const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",maxOutputTokens:1400}}),
-      signal:AbortSignal.timeout(4500)
+      signal:AbortSignal.timeout(2500)
     });
     const j=await r.json();
     if(!r.ok || !j.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error("Gemini HTTP "+r.status+": "+JSON.stringify(j).slice(0,240));
@@ -157,7 +157,7 @@ async function pesquisarWebProduto(nome, categoria) {
   const resultados = await Promise.all(consultas.map(async q => {
     try {
       const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q);
-      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaResearch/1.0)", "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.7" }, signal: AbortSignal.timeout(3500) });
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaResearch/1.0)", "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.7" }, signal: AbortSignal.timeout(1200) });
       if (!r.ok) return [];
       const html = await r.text();
       return [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)]

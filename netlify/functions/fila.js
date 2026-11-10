@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { calcularComissaoUnidade, ordenarPorComissaoUnidade } from "../lib/comissao.js";
 import { db, json, autorizado, shopee, gerarConteudo, pesquisarEstrategia } from "../lib.js";
 
 const escGql=s=>String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"');
@@ -75,7 +76,7 @@ export default async(req)=>{
       ? await consulta.in("status", ["pendente","aprovado","sem_video","publicado","rejeitado","descartado"]).order("atualizado_em",{ascending:false}).limit(1000)
       : await consulta.eq("status",statusFiltro).order("atualizado_em",{ascending:false}).limit(100);
     if(error)return json({erro:error.message},500);
-    const limpos=(data||[]).map(p=>({...p,video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[]}));return json(limpos);
+    const limpos=(data||[]).map(p=>({...p,comissao_unidade:calcularComissaoUnidade(p.preco,p.comissao),video_roteiro:null,video_narracao:null,video_textos:null,video_cta:null,hashtags:[]}));return json(ordenarPorComissaoUnidade(limpos));
   }
   const b=await req.json().catch(() => null);
   if (!b || typeof b !== "object" || Array.isArray(b)) {

@@ -586,7 +586,7 @@ export async function pesquisarEstrategia(p) {
   const hashtags = [...new Set(hashtagsEntrada.map(x => {
     const t = String(x || "").replace(/[^#\p{L}\p{N}_]/gu, "");
     return t.startsWith("#") ? t : "#" + t;
-  }).filter(x => /^#[\p{L}\p{N}_]{2,}$/u.test(x)))].slice(0, 5);
+  }).filter(x => /^#[\p{L}\p{N}_]{2,}$/u.test(x) && !/promo|desconto|oferta|venda|viral|ranking|avaliacao|preco|barato|comprador/i.test(normalizarTexto(x))))].slice(0, 3);
   const termosTag = palavraChave.split(/\s+/).filter(Boolean);
   const tagsBase = [
     "#" + (termosTag[0] || "produto").replace(/[^\p{L}\p{N}]/gu, ""),

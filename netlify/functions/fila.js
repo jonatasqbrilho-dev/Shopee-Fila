@@ -120,6 +120,30 @@ export default async(req)=>{
       return json({ ok: true, estrategia });
     } catch (e) { return json({ erro: e.message || "Falha na pesquisa" }, 500); }
   }
+  if (b.acao === "selecionar_gancho") {
+    if (!b.id || !b.gancho || !["Problema e solução","Curiosidade","Demonstração"].includes(b.gancho.tipo)) {
+      return json({ erro: "Gancho inválido." }, 400);
+    }
+    const { data: p, error } = await sb.from("produtos")
+      .select("video_estrategia")
+      .eq("id", b.id).single();
+    if (error || !p?.video_estrategia) return json({ erro: error?.message || "Estratégia não encontrada." }, 404);
+    const estrategia = { ...p.video_estrategia, gancho_escolhido: b.gancho };
+    const base = String(estrategia.prompt_video || "");
+    const prompt = base.replace(/Gancho: [^\\n]*/i, "Gancho: " + b.gancho.texto + " Abertura visual: " + b.gancho.abertura_visual);
+    estrategia.prompt_video = prompt;
+    estrategia.clipes = (estrategia.clipes || []).map(c => ({
+      ...c,
+      prompt_flow: String(c.prompt_flow || "").replace(/Gancho: [^\\n]*/i, "Gancho: " + b.gancho.texto + " Abertura visual: " + b.gancho.abertura_visual)
+    }));
+    const { error: saveError } = await sb.from("produtos").update({
+      video_estrategia: estrategia,
+      video_prompt: prompt,
+      atualizado_em: new Date().toISOString()
+    }).eq("id", b.id);
+    if (saveError) return json({ erro: "Não foi possível salvar o gancho: " + saveError.message }, 500);
+    return json({ ok: true, gancho_escolhido: b.gancho.tipo });
+  }
   if (b.acao === "avaliar_estrategia") {
     const feedback = b.feedback === "aprovado" ? "aprovado" : b.feedback === "rejeitado" ? "rejeitado" : null;
     if (!feedback) return json({ erro: "Avaliação inválida." }, 400);

@@ -40,6 +40,11 @@ create table if not exists produtos (
   mpt_status text,
   mpt_video_url text,
   mpt_atualizado_em timestamptz,
+  diretor_ia_status text,
+  diretor_ia_erro text,
+  diretor_ia_job_id uuid,
+  diretor_ia_iniciado_em timestamptz,
+  diretor_ia_concluido_em timestamptz,
   telegram_ok boolean not null default false,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
@@ -52,6 +57,12 @@ alter table produtos add column if not exists mpt_task_id text;
 alter table produtos add column if not exists mpt_status text;
 alter table produtos add column if not exists mpt_video_url text;
 alter table produtos add column if not exists mpt_atualizado_em timestamptz;
+alter table produtos add column if not exists diretor_ia_status text;
+alter table produtos add column if not exists diretor_ia_erro text;
+alter table produtos add column if not exists diretor_ia_job_id uuid;
+alter table produtos add column if not exists diretor_ia_iniciado_em timestamptz;
+alter table produtos add column if not exists diretor_ia_concluido_em timestamptz;
+create index if not exists produtos_diretor_ia_status_idx on produtos (diretor_ia_status, diretor_ia_iniciado_em desc);
 alter table produtos add column if not exists video_roteiro text;
 alter table produtos add column if not exists video_narracao text;
 alter table produtos add column if not exists video_textos text;
@@ -85,6 +96,7 @@ create table if not exists public.diretor_ia_memoria (
   produto_nome text not null,
   categoria text not null default 'produto',
   formato_escolhido text,
+  angulo_escolhido text,
   gancho text,
   estrutura_cenas jsonb not null default '[]'::jsonb,
   narracao text,
@@ -95,6 +107,7 @@ create table if not exists public.diretor_ia_memoria (
   criado_em timestamptz not null default now(),
   avaliado_em timestamptz
 );
+create index if not exists diretor_ia_memoria_categoria_angulo_idx on public.diretor_ia_memoria (categoria, angulo_escolhido, criado_em desc);
 create index if not exists diretor_ia_memoria_categoria_data on public.diretor_ia_memoria (categoria, criado_em desc);
 create index if not exists diretor_ia_memoria_feedback_data on public.diretor_ia_memoria (feedback, criado_em desc);
 create index if not exists diretor_ia_memoria_produto on public.diretor_ia_memoria (produto_id);

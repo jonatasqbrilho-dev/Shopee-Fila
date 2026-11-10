@@ -120,6 +120,45 @@ export default async(req)=>{
       return json({ ok: true, estrategia });
     } catch (e) { return json({ erro: e.message || "Falha na pesquisa" }, 500); }
   }
+  if (b.acao === "selecionar_gancho") {
+    if (!b.id || !b.gancho || !["Problema e solução","Curiosidade","Demonstração"].includes(b.gancho.tipo)) {
+      return json({ erro: "Gancho inválido." }, 400);
+    }
+    const { data: p, error } = await sb.from("produtos")
+      .select("video_estrategia")
+      .eq("id", b.id).single();
+    if (error || !p?.video_estrategia) return json({ erro: error?.message || "Estratégia não encontrada." }, 404);
+    const escolhido = (p.video_estrategia.ganchos || []).find(g => g.tipo === b.gancho.tipo && g.texto === b.gancho.texto);
+    if (!escolhido) return json({ erro: "Esse gancho não pertence à estratégia salva." }, 400);
+    const estrategia = { ...p.video_estrategia, gancho_escolhido: escolhido };
+    const aplicarGancho = texto => String(texto || "").replace(/Gancho: [^\r\n]*(?:\r?\nAbertura visual: [^\r\n]*)?/i, "Gancho: " + escolhido.texto + "\nAbertura visual: " + escolhido.abertura_visual);
+    const prompt = aplicarGancho(estrategia.prompt_video);
+    estrategia.prompt_video = prompt;
+    estrategia.clipes = (estrategia.clipes || []).map(c => ({
+      ...c,
+      prompt_flow: aplicarGancho(c.prompt_flow)
+    }));
+    const { error: saveError } = await sb.from("produtos").update({
+      video_estrategia: estrategia,
+      video_prompt: prompt,
+      atualizado_em: new Date().toISOString()
+    }).eq("id", b.id);
+    if (saveError) return json({ erro: "Não foi possível salvar o gancho: " + saveError.message }, 500);
+    return json({ ok: true, gancho_escolhido: b.gancho.tipo });
+  }
+  if (b.acao === "registrar_gancho_publicado") {
+    if (!b.id || !b.gancho || !["Problema e solução","Curiosidade","Demonstração"].includes(b.gancho.tipo)) {
+      return json({ erro: "Gancho inválido." }, 400);
+    }
+    const { data: p, error } = await sb.from("produtos").select("video_estrategia").eq("id", b.id).single();
+    if (error || !p?.video_estrategia) return json({ erro: error?.message || "Estratégia não encontrada." }, 404);
+    const publicado = (p.video_estrategia.ganchos || []).find(g => g.tipo === b.gancho.tipo && g.texto === b.gancho.texto);
+    if (!publicado) return json({ erro: "Esse gancho não pertence à estratégia salva." }, 400);
+    const estrategia = { ...p.video_estrategia, gancho_publicado: { ...publicado, registrado_em: new Date().toISOString() } };
+    const { error: saveError } = await sb.from("produtos").update({ video_estrategia: estrategia, atualizado_em: new Date().toISOString() }).eq("id", b.id);
+    if (saveError) return json({ erro: "Não foi possível registrar o gancho publicado: " + saveError.message }, 500);
+    return json({ ok: true, gancho_publicado: publicado.tipo });
+  }
   if (b.acao === "avaliar_estrategia") {
     const feedback = b.feedback === "aprovado" ? "aprovado" : b.feedback === "rejeitado" ? "rejeitado" : null;
     if (!feedback) return json({ erro: "Avaliação inválida." }, 400);

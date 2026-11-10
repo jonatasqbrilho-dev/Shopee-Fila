@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
+import { DURACAO_PADRAO_DIRETOR, LIMITE_FALA_DIRETOR, extrairQuantidadeKit, palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade, normalizarTexto } from "./diretor-validacao.js";
 
 export const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
 export const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });
@@ -118,7 +119,7 @@ async function gemini(prompt, options = {}) {
 // Se o modelo principal estiver sobrecarregado, tenta novamente e usa um Flash alternativo.
 async function geminiDiretor(prompt, options = {}) {
   const principal = await modeloGeminiDiretor();
-  const modelos = [...new Set([principal, "gemini-2.5-flash"])];
+  const modelos = [...new Set([principal, "gemini-3-flash-preview"])];
   const erros = [];
   const repetiveis = [429, 500, 502, 503, 504];
   for (const model of modelos) {
@@ -160,18 +161,19 @@ async function iaJson(prompt){
 
 // O Diretor IA produz uma estratégia extensa: usa os dois provedores em paralelo,
 // com mais tempo e tokens, e encerra a chamada perdedora assim que uma resposta válida chega.
-async function iaJsonDiretor(prompt, produtoNome = "produto") {
+async function iaJsonDiretor(prompt, produtoNome = "produto", contextoProduto = {}) {
   const controladores = [new AbortController(), new AbortController()];
   const limite = setTimeout(() => controladores.forEach(c => c.abort()), 50000);
   const validar = async (chamar) => {
     const resposta = await chamar();
-    if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length) {
+    if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length || !Array.isArray(resposta?.ganchos) || resposta.ganchos.length !== 3) {
       throw new Error("O provedor retornou uma estratégia incompleta ou sem roteiro.");
     }
-    // O Diretor IA entrega um único vídeo de 15 segundos, não uma sequência de clipes.
+    // O Diretor IA entrega um único vídeo de 10 segundos, não uma sequência de clipes.
     const clipesOriginais = resposta.clipes.slice(0, 4);
     const primeiro = clipesOriginais[0] || {};
     const continuidade = resposta.continuidade || {};
+    const ganchoPrincipal = (Array.isArray(resposta.ganchos) ? resposta.ganchos.find(g => g.tipo === "Demonstração") : null) || (Array.isArray(resposta.ganchos) ? resposta.ganchos[0] : null) || {};
     const juntar = (campo) => clipesOriginais.map(c => String(c?.[campo] || "").trim()).filter(Boolean).join(" ");
     const falaOriginal = String(primeiro.fala || resposta.narracao || "").trim();
     const nomeCurto = nomeCurtoFalado(produtoNome || resposta.produto_nome || resposta.produto);
@@ -180,23 +182,25 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
       ? falaOriginal.slice(0, falaOriginal.toLowerCase().indexOf(nomeOriginal.toLowerCase())) + nomeCurto + falaOriginal.slice(falaOriginal.toLowerCase().indexOf(nomeOriginal.toLowerCase()) + nomeOriginal.length)
       : falaOriginal;
     let fala = falaComNomeCurto
-      ? falaComNomeCurto.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 30).join(" ")
+      ? falaComNomeCurto.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 16).join(" ")
       : "Olha só esse produto!";
     fala = fala.replace(/sem transparência[^.!?]*/ig, "").replace(/transparência[^.!?]*/ig, "").replace(/conforto total/ig, "praticidade").replace(/\s{2,}/g, " ").trim();
     if (!/\b(link|compre|comprar|garanta|garantir|confira)\b/i.test(fala)) fala = (fala ? fala.replace(/[.!?]+$/, "") + ". " : "") + "Clique no link e confira!";
     const detalhes = [
-      "VÍDEO ÚNICO, CONTÍNUO E COMPLETO — duração EXATA de 15 segundos, formato vertical 9:16.",
+      "VÍDEO ÚNICO, CONTÍNUO E COMPLETO — duração EXATA de 10 segundos, formato vertical 9:16.",
       "Apresente o produto imediatamente no primeiro segundo. Escolha a melhor forma de apresentação para este item: uma pessoa falando diretamente com a câmera, demonstração com as mãos, uso real ou enquadramento do próprio produto. Não force uma modelo quando ela não acrescentar valor.",
-      "Em uma única tomada fluida: 0–3s produto aparece imediatamente; 3–9s apresente uma ou duas características confirmadas; 9–15s recomendação natural e CTA claro para clicar no link e conferir/comprar.",
-      "A apresentação deve soar como uma pessoa real recomendando o produto a quem está assistindo: fala natural, simpática, segura, persuasiva e em português brasileiro. A fala deve caber integralmente em 15 segundos, sem locução acelerada. Na fala, use um NOME CURTO E NATURAL do produto (2 a 4 palavras), nunca leia o título comercial completo do anúncio.",
+      "Em uma única tomada fluida: 0–2s produto aparece imediatamente e prende atenção; 2–7s apresente uma característica confirmada com demonstração simples; 7–10s recomendação natural e CTA claro para clicar no link e conferir.",
+      "A apresentação deve soar como uma pessoa real recomendando o produto a quem está assistindo: fala natural, simpática, segura, persuasiva e em português brasileiro. A fala deve caber integralmente em 10 segundos, com no máximo 22 palavras e sem acelerar. Na fala, use um NOME CURTO E NATURAL do produto (2 a 4 palavras), nunca leia o título comercial completo do anúncio.",
       "Produto anunciado (identificação visual; não ler o título completo): " + String(produtoNome || resposta.produto_nome || resposta.produto || "produto"),
+      contextoProduto.quantidadeKit ? "QUANTIDADE OBRIGATÓRIA: o anúncio declara um kit com " + contextoProduto.quantidadeKit + " peças. Apresente exatamente essa quantidade; não confunda número de modelos/fotos com quantidade de peças. Se as cores/variações estiverem confirmadas nos dados ou imagem, mostre as variações corretas sem inventar outras." : "",
       "Nome curto obrigatório na fala: " + nomeCurto + ". Nunca pronuncie o título comercial completo.",
       continuidade.pessoa ? "Pessoa/apresentador: " + continuidade.pessoa : "Escolha apresentador, mãos ou demonstração sem pessoa conforme a melhor solução para o produto.",
       continuidade.roupa ? "Roupa: " + continuidade.roupa : "",
       continuidade.cenario ? "Cenário: " + continuidade.cenario : "",
       continuidade.iluminacao ? "Iluminação: " + continuidade.iluminacao : "",
       continuidade.camera ? "Câmera: " + continuidade.camera : "",
-      "Gancho: " + String(resposta.gancho || primeiro.objetivo || primeiro.visual || "Mostre o produto de forma atraente logo no início."),
+      "Gancho: " + String(ganchoPrincipal.texto || resposta.gancho || primeiro.objetivo || primeiro.visual || "Mostre o produto de forma atraente logo no início."),
+      ganchoPrincipal.abertura_visual ? "Abertura visual: " + ganchoPrincipal.abertura_visual : "",
       "Demonstração: " + [String(primeiro.visual || ""), String(primeiro.acao || "")].filter(Boolean).join(" "),
       "Fala sugerida: " + fala,
       "Texto na tela: " + String(primeiro.texto_tela || (Array.isArray(resposta.textos_tela) ? resposta.textos_tela.join(" · ") : "") || "Confira no link"),
@@ -207,7 +211,7 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
     ].filter(Boolean).join("\n");
     const clipeUnico = {
       numero: 1,
-      duracao_segundos: 15,
+      duracao_segundos: DURACAO_PADRAO_DIRETOR,
       objetivo: "Apresentar, demonstrar e vender o produto em um único vídeo",
       visual: juntar("visual") || primeiro.visual || "Produto em destaque desde o primeiro segundo.",
       acao: juntar("acao") || primeiro.acao || "Apresentação natural do produto, demonstração breve e CTA.",
@@ -217,10 +221,11 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
       prompt_flow: detalhes
     };
     resposta.clipes = [clipeUnico];
-    resposta.duracao_segundos = 15;
+    resposta.duracao_segundos = DURACAO_PADRAO_DIRETOR;
+    resposta.gancho = ganchoPrincipal.texto || resposta.gancho;
     resposta.prompt_video = detalhes;
     resposta.estrutura_cenas = [{
-      momento: "0–15s",
+      momento: "0–10s",
       visual: clipeUnico.visual,
       objetivo: clipeUnico.objetivo,
       camera: clipeUnico.camera,
@@ -399,10 +404,10 @@ async function analisarImagemDiretor(p) {
     if (tamanho > 4 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
     const bytes = Buffer.from(await resposta.arrayBuffer());
     if (bytes.length > 4 * 1024 * 1024) throw new Error("A imagem excede 5 MB.");
-    const promptImagem = "Analise visualmente a imagem de anúncio de um produto para um sistema de criação de vídeos comerciais. Retorne SOMENTE JSON válido com: {\"tipo_produto_aparente\":\"...\",\"fatos_visiveis\":[\"...\"],\"cor_aparente\":\"... ou desconhecida\",\"materiais_visiveis\":[\"...\"],\"componentes_visiveis\":[\"...\"],\"uso_que_pode_ser_demonstrado\":[\"...\"],\"lacunas\":[\"...\"],\"alertas_fidelidade\":[\"...\"]}. Descreva somente o que é claramente visível. Não deduza material, tamanho, qualidade, capacidade, função ou benefício apenas pela aparência. Se houver texto na imagem, transcreva somente o que estiver legível e identifique como texto do anúncio, não como verificação independente. Se a imagem tiver vários itens, diferencie o produto principal dos acessórios. Nunca invente.";
+    const promptImagem = "Analise visualmente a imagem de anúncio de um produto para um sistema de criação de vídeos comerciais. Retorne SOMENTE JSON válido com: {\"tipo_produto_aparente\":\"...\",\"fatos_visiveis\":[\"...\"],\"cor_aparente\":\"... ou desconhecida\",\"materiais_visiveis\":[\"...\"],\"componentes_visiveis\":[\"...\"],\"uso_que_pode_ser_demonstrado\":[\"...\"],\"lacunas\":[\"...\"],\"alertas_fidelidade\":[\"...\"]}. Descreva somente o que é claramente visível. Não deduza material, tamanho, qualidade, capacidade, função ou benefício apenas pela aparência. Se houver texto na imagem, transcreva somente o que estiver legível e identifique como texto do anúncio, não como verificação independente. Diferencie quantidade de produtos de quantidade de pessoas/modelos: duas modelos ou duas fotos da mesma peça não comprovam que o anúncio vende duas unidades. Não deduza que cores mostradas são variações incluídas no kit sem confirmação textual. Se houver vários itens, diferencie produto principal, variações, acessórios e elementos de cenário. Nunca invente.";
     // O Gemini pode devolver 429/503 temporariamente. Tenta novamente e alterna
     // para o modelo Flash estável antes de desistir da análise visual.
-    const modelos = [...new Set([await modeloGeminiDiretor(), await modeloGemini()])];
+    const modelos = [...new Set([await modeloGeminiDiretor(), "gemini-3-flash-preview"])];
     const erros = [];
     for (const modelo of modelos) {
       for (let tentativa = 1; tentativa <= 2; tentativa++) {
@@ -439,6 +444,7 @@ async function analisarImagemDiretor(p) {
 function nomeCurtoFalado(nome) {
   const original = String(nome || "produto").trim();
   const n = original.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/\bregata\b/.test(n)) return /\bgola\s+boba\b/.test(n) ? "regata gola boba" : "regata";
   if (/\bmacacao\b/.test(n)) return /\bshort\s+saia\b/.test(n) ? "macacão short saia" : "macacão";
   if (/\bconjunto\b/.test(n)) return /\b(academia|fitness|treino)\b/.test(n) ? "conjunto de academia" : "conjunto";
   if (/\bvestido\b/.test(n)) return "vestido";
@@ -447,13 +453,18 @@ function nomeCurtoFalado(nome) {
   if (/\bshort\b/.test(n)) return /\bsaia\b/.test(n) ? "short saia" : "short";
   if (/\bgarrafa\b/.test(n)) return "garrafa";
   if (/\bfone\b/.test(n)) return "fone";
-  const ignorar = new Set(["feminino","feminina","masculino","masculina","unissex","tecido","liso","lisa","estampado","estampada","novo","nova","premium","original","adulto","adulta","infantil","com","para","de","da","do","e"]);
+  const ignorar = new Set(["feminino","feminina","masculino","masculina","unissex","tecido","liso","lisa","estampado","estampada","novo","nova","premium","original","adulto","adulta","infantil","kit","com","para","de","da","do","e"]);
   const palavras = original.split(/\s+/).filter(p => !ignorar.has(p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
   return palavras.slice(0, 3).join(" ") || "produto";
 }
 
+
 export async function pesquisarEstrategia(p) {
   const nome = String(p.nome || p.productName || "produto").slice(0, 250);
+  const modeloFlow = String(process.env.FLOW_MODELO || "Omni Flash 1.1").slice(0, 80);
+  const limiteInformado = Number(process.env.CLIPE_MAX || DURACAO_PADRAO_DIRETOR);
+  const limiteClipe = Number.isFinite(limiteInformado) ? Math.max(1, Math.min(60, limiteInformado)) : DURACAO_PADRAO_DIRETOR;
+  if (DURACAO_PADRAO_DIRETOR > limiteClipe) throw new Error("A duração de 10 segundos excede CLIPE_MAX configurado para o Flow.");
   const categoria = categoriaDiretor(nome, p.categoria || p.category);
   const dadosProduto = {
     nome,
@@ -515,21 +526,29 @@ export async function pesquisarEstrategia(p) {
 
   const prompt = [
     "Você é diretor de publicidade e performance especializado em vídeos curtos de afiliados da Shopee Brasil. Não seja apenas um gerador de cenas: pense como um vendedor consultivo e diretor audiovisual.",
+    "IDIOMA OBRIGATÓRIO: escreva TODOS os campos textuais do JSON em português brasileiro natural. Nunca responda em espanhol, inglês ou mistura de idiomas. Preserve nomes oficiais de produtos e marcas; traduza descrições, justificativas, público, ângulos, ganchos, continuidade, roteiro e lacunas para português brasileiro.",
     "OBJETIVO: criar uma peça curta que prenda atenção, demonstre um benefício real, reduza uma objeção e estimule o clique. Não prometa vendas, viralização ou resultados.",
     "DADOS DO PRODUTO: " + JSON.stringify(dadosProduto),
     "ANÁLISE VISUAL DA IMAGEM (fatos visíveis e lacunas): " + JSON.stringify(analiseImagem),
+    "REGRA DE EVIDÊNCIA: características de material, composição, acabamento, caimento, elasticidade, conforto, transparência, durabilidade e benefícios só podem ser afirmadas se estiverem explicitamente descritas nos dados textuais do anúncio ou comprovadas de forma direta. Brilho aparente não comprova tecido acetinado; aparência de caimento não comprova que não aperta ou realça o corpo. Se não houver comprovação, descreva apenas o que se vê, sem transformar aparência em benefício.",
+    "REGRA DE QUANTIDADE E VARIAÇÕES: identifique kits e quantidades pelo título/descrição do anúncio. Se houver KIT 2, o vídeo e os argumentos devem representar duas peças. Use a imagem para identificar cores/modelos visíveis, mas não confunda duas modelos, fotos ou poses com duas unidades do produto. Não omita peças incluídas nem acrescente peças/cores não confirmadas.",
+    "PÚBLICO: descreva interesses e ocasião de uso prováveis com cautela. Não invente faixa etária precisa, gênero exclusivo ou perfil demográfico sem dados confiáveis.",
     "HISTÓRICO DO PRODUTO: " + historicoTexto,
     "MEMÓRIA DA CATEGORIA " + categoria + ": " + memoriaTexto,
     "FONTES E REFERÊNCIAS PÚBLICAS: " + JSON.stringify(fontes),
     "ETAPA 1 — VERDADE E VALOR DO PRODUTO: separe fatos confirmados no anúncio, fatos visíveis na imagem, opiniões de compradores e lacunas. Use a descrição e as características do anúncio para identificar material/composição, textura, acabamento, caimento, construção, funcionalidades e diferenciais; a imagem sozinha não comprova composição, qualidade, durabilidade ou desempenho. Quando o anúncio informar o tecido/material, explique em linguagem simples por que essa informação importa, sem atribuir propriedades não comprovadas. Use avaliações apenas como percepção de compradores, indicando padrões recorrentes quando houver volume suficiente; nunca transforme opinião em garantia. Analise preço somente se houver preço atual confiável e referência comparável do mesmo produto ou de produtos realmente equivalentes. Só chame de barato, promoção, ótimo preço ou custo-benefício quando a comparação sustentar isso; sem comparação confiável, não faça afirmação de preço. Nunca invente desconto, escassez, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios. Alegações promocionais no título (como zero transparência, à prova d'água, antialérgico, compressão ou durabilidade) não são fatos verificados só por aparecerem no anúncio.",
     "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
-    "ETAPA 3 — ROTEIRO OBRIGATÓRIO: a fala precisa dizer claramente o NOME DO PRODUTO (use uma versão curta, mas reconhecível, do nome exato do anúncio) e apresentar PELO MENOS DOIS benefícios ou características úteis, reais e confirmados nos dados do anúncio ou claramente visíveis. Não basta dizer apenas 'olha esse produto', 'confira este item' ou mostrar o produto sem identificá-lo. Estruture a fala em português brasileiro: nome do produto + dois benefícios/características confirmados + CTA. Exemplo de estrutura, não copie literalmente: 'Essa [nome do produto] tem [característica/benefício 1] e [característica/benefício 2]. Clique e confira!'. Se não houver dois benefícios comprováveis, cite duas características objetivas confirmadas, sem inventar vantagens. Comece com o produto visível nos primeiros 2 segundos, demonstre ao menos uma característica real em ação quando for possível e seguro. A fala deve soar espontânea, específica e caber naturalmente em 15 segundos; use um nome curto de 2 a 4 palavras, nunca leia o título completo do anúncio. Não simule depoimento ou experiência pessoal que não aconteceu.",
-    "ETAPA 4 — VÍDEO ÚNICO PARA GOOGLE FLOW: retorne apenas UM vídeo, UM clipe e UM prompt_flow, com duração EXATA de 15 segundos, formato vertical 9:16. Não divida em cenas ou partes. Use 0–3s para gancho visual com produto visível; 3–9s para apresentar uma ou duas características confirmadas; 9–15s para recomendação e CTA. Tudo em uma única tomada contínua. Escolha o melhor meio de apresentação. A fala deve ser natural, em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo) e caber em 15 segundos sem acelerar. O prompt_flow deve ser completo e pronto para colar no Flow, contendo produto, cenário, apresentador quando adequado, ação contínua, câmera, luz, fala, texto, áudio e restrições de fidelidade. Sem cortes ou transições.",
-    "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente a peça anunciada, sem adicionar roupa por cima nem alterar cor, corte ou modelo. Em 15 segundos, use ações simples e realistas para apresentar a peça. Não tente provar ausência de transparência com a mão, alongamento, agachamento ou teste visual; não afirme que o tecido não fica transparente. Só demonstre detalhes visíveis/confirmados. Nunca levantar, puxar ou expor a roupa. A fala deve usar nome curto e destacar somente elementos confirmados.",
+    "ETAPA 3 — ROTEIRO OBRIGATÓRIO: a fala precisa dizer claramente o NOME DO PRODUTO (use uma versão curta, mas reconhecível, do nome exato do anúncio) e apresentar PELO MENOS DOIS benefícios ou características úteis, reais e confirmados nos dados do anúncio ou claramente visíveis. Não basta dizer apenas 'olha esse produto', 'confira este item' ou mostrar o produto sem identificá-lo. Estruture a fala em português brasileiro: nome do produto + dois benefícios/características confirmados + CTA. Exemplo de estrutura, não copie literalmente: 'Essa [nome do produto] tem [característica/benefício 1] e [característica/benefício 2]. Clique e confira!'. Se não houver dois benefícios comprováveis, cite duas características objetivas confirmadas, sem inventar vantagens. Comece com o produto visível nos primeiros 2 segundos, demonstre ao menos uma característica real em ação quando for possível e seguro. A fala deve soar espontânea, específica e caber naturalmente em 10 segundos; use um nome curto de 2 a 4 palavras, nunca leia o título completo do anúncio. Não simule depoimento ou experiência pessoal que não aconteceu.",
+    "ETAPA 2A — TRÊS GANCHOS PARA TESTE: produza EXATAMENTE três aberturas realmente diferentes, uma de problema e solução, uma de curiosidade e uma de demonstração visual. Cada uma deve ter uma frase curta (máximo 12 palavras) e uma abertura visual executável nos primeiros 2 segundos. Não repita a mesma frase trocando poucas palavras. Não invente características, não use preço, desconto, escassez, número de vendas ou promessas. Retorne em ganchos: [{tipo:'Problema e solução',texto:'...',abertura_visual:'...'},{tipo:'Curiosidade',texto:'...',abertura_visual:'...'},{tipo:'Demonstração',texto:'...',abertura_visual:'...'}]. O vídeo principal continua com 10 segundos; os três ganchos são alternativas de abertura, não três chamadas de IA nem três vídeos completos.",
+    "ETAPA 2B — PALAVRA-CHAVE E LEGENDA: escolha uma palavra-chave curta usando somente termos do nome e dos dados confirmados do produto. Gere uma legenda pronta para publicação com no máximo 150 caracteres, incluindo 3 a 5 hashtags específicas. Não inclua preço, valores, desconto, promoção, quantidade de vendas, ranking, avaliações ou promessas absolutas. A legenda deve identificar o produto e convidar a conferir o link.",
+    "ETAPA 3A — RETENÇÃO E LIMITES: produto claramente visível desde o primeiro segundo; uma mensagem principal; uma demonstração simples e real; nada de introdução longa. A fala total tem no máximo 22 palavras e deve caber em 10 segundos em ritmo natural. Cada cena/trecho descrito deve conter apenas fatos confirmados. Mantenha exatamente a mesma pessoa, roupa, cenário, iluminação e identidade visual durante todo o vídeo.",
+    "MODELO DE GERAÇÃO CONFIGURADO: " + modeloFlow + ". Duração solicitada: 10 segundos; limite máximo configurado: " + limiteClipe + " segundos. Não altere a duração solicitada.",
+    "ETAPA 4 — VÍDEO ÚNICO PARA GOOGLE FLOW: retorne apenas UM vídeo, UM clipe e UM prompt_flow, com duração EXATA de 10 segundos, formato vertical 9:16. Não divida em cenas ou partes. Use 0–2s para gancho visual com produto visível; 2–7s para apresentar uma característica confirmada; 7–10s para recomendação e CTA. Tudo em uma única tomada contínua. Escolha o melhor meio de apresentação. A fala deve ser natural, em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo) e caber em 10 segundos sem acelerar. O prompt_flow deve ser completo e pronto para colar no Flow, contendo produto, cenário, apresentador quando adequado, ação contínua, câmera, luz, fala, texto, áudio e restrições de fidelidade. Sem cortes ou transições.",
+    "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente a peça anunciada, sem adicionar roupa por cima nem alterar cor, corte ou modelo. Em 10 segundos, use ações simples e realistas para apresentar a peça. Não tente provar ausência de transparência com a mão, alongamento, agachamento ou teste visual; não afirme que o tecido não fica transparente. Só demonstre detalhes visíveis/confirmados. Nunca levantar, puxar ou expor a roupa. A fala deve usar nome curto e destacar somente elementos confirmados.",
     "CONTINUIDADE: crie um bloco compacto com identidade visual da pessoa (se houver), roupa igual à referência, cenário, iluminação e câmera. Como existe apenas um vídeo contínuo, não descreva vários clipes nem repita instruções por clipe. Se uma pessoa não acrescentar valor, escolha mãos, demonstração ou produto em destaque.",
     "FIDELIDADE VISUAL: a imagem do anúncio é referência prioritária. Preserve forma, cor, proporções, estampa, marca, embalagem, componentes e quantidade visíveis. Não acrescente acessórios nem invente detalhes. Evite alterações de design, mãos deformadas, contato impossível, movimentos bruscos ou transições que escondam o item. Para roupas, não crie camadas de roupa que escondam a peça anunciada.",
-    "PROMPT FINAL: prompt_video deve conter um único prompt pronto para copiar, em formato 9:16 e duração exata de 15 segundos. A fala deve ser audível, sincronizada e em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo do anúncio), mencionar uma ou duas características reais confirmadas e terminar com CTA. Use até 30 palavras, sem acelerar. Nunca transforme alegação promocional do título em fato comprovado. Não invente teste, resultado ou experiência pessoal. O prompt deve conter produto, apresentação, cenário, ação contínua, câmera, luz, fala, texto e áudio.",
-    "VALIDAÇÃO: retorne exatamente um clipe com duracao_segundos igual a 15 e apenas um prompt_flow. O vídeo deve ser contínuo, sem cortes, e conter gancho, apresentação e CTA dentro dos mesmos 15 segundos. A fala deve usar nome curto e caber no tempo. Nenhuma afirmação pode exceder os dados ou o que está visível. Nota 0–100 mede adequação criativa estimada, não conversão.",
+    "PROMPT FINAL: prompt_video deve conter um único prompt pronto para copiar, em formato 9:16 e duração exata de 10 segundos. A fala deve ser audível, sincronizada e em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo do anúncio), mencionar uma ou duas características reais confirmadas e terminar com CTA. Use até 22 palavras, sem acelerar. Nunca transforme alegação promocional do título em fato comprovado. Não invente teste, resultado ou experiência pessoal. O prompt deve conter produto, apresentação, cenário, ação contínua, câmera, luz, fala, texto e áudio.",
+    "VALIDAÇÃO: retorne exatamente um clipe com duracao_segundos igual a 10 e apenas um prompt_flow. O vídeo deve ser contínuo, sem cortes, e conter gancho, apresentação e CTA dentro dos mesmos 10 segundos. A fala deve usar nome curto e caber no tempo. Nenhuma afirmação pode exceder os dados ou o que está visível. Nota 0–100 mede adequação criativa estimada, não conversão.",
     "RETORNE SOMENTE JSON válido, sem markdown, com este formato: " +
     JSON.stringify({
       categoria: categoria,
@@ -543,21 +562,29 @@ export async function pesquisarEstrategia(p) {
       nota_adequacao: 0,
       justificativa: "...",
       gancho: "...",
-      duracao_segundos: 15,
+      ganchos: [{ tipo: "Problema e solução", texto: "...", abertura_visual: "..." }, { tipo: "Curiosidade", texto: "...", abertura_visual: "..." }, { tipo: "Demonstração", texto: "...", abertura_visual: "..." }],
+      palavra_chave: "...",
+      legenda: "... com 3 a 5 hashtags e até 150 caracteres",
+      hashtags: ["#...", "#...", "#..."],
+      duracao_segundos: 10,
       continuidade: { pessoa: "... ou sem pessoa", roupa: "...", cenario: "...", iluminacao: "...", camera: "..." },
-      clipes: [{ numero: 1, duracao_segundos: 15, objetivo: "apresentar e vender em um único vídeo", visual: "...", acao: "...", camera: "...", fala: "...", texto_tela: "...", prompt_flow: "um único prompt completo para vídeo contínuo de 15 segundos" }],
-      estrutura_cenas: [{ momento: "0–15s", visual: "...", objetivo: "...", camera: "...", acao: "..." }],
+      clipes: [{ numero: 1, duracao_segundos: 10, objetivo: "apresentar e vender em um único vídeo", visual: "...", acao: "...", camera: "...", fala: "...", texto_tela: "...", prompt_flow: "um único prompt completo para vídeo contínuo de 10 segundos" }],
+      estrutura_cenas: [{ momento: "0–10s", visual: "...", objetivo: "...", camera: "...", acao: "..." }],
       narracao: "...",
       textos_tela: ["..."],
       cta: "...",
-      prompt_video: "um único prompt completo pronto para copiar para vídeo de 15 segundos",
+      prompt_video: "um único prompt completo pronto para copiar para vídeo de 10 segundos",
       alertas: ["..."],
       fontes_utilizadas: [{ titulo: "...", url: "...", contribuicao: "..." }],
       limites_pesquisa: "..."
     }) + ". Todos os campos devem conter dados reais da análise; não mantenha exemplos genéricos do esquema."
   ].join("\n\n");
 
-  const resultado = await iaJsonDiretor(prompt, nome);
+  const quantidadeKit = extrairQuantidadeKit(nome, dadosProduto.descricao, dadosProduto.caracteristicas, dadosProduto.variacao);
+  const contextoQuantidade = quantidadeKit
+    ? "O título/descrição declara KIT com " + quantidadeKit + " peças. A estratégia e o prompt devem mostrar exatamente " + quantidadeKit + " peças, sem confundir modelos ou fotos com unidades."
+    : "A quantidade de peças não está confirmada; não invente kit, quantidade nem variações incluídas.";
+  const resultado = await iaJsonDiretor(prompt + "\n\nQUANTIDADE DO ANÚNCIO: " + contextoQuantidade, nome, { quantidadeKit });
   const clipes = resultado.clipes.map((c, i) => ({
     ...c,
     numero: Number(c.numero || i + 1),
@@ -565,14 +592,51 @@ export async function pesquisarEstrategia(p) {
     prompt_flow: String(c.prompt_flow || "").trim().replace(/\\\\n/g, "\\n")
   }));
   const duracao = clipes.reduce((s, c) => s + c.duracao_segundos, 0);
-  if (clipes.length !== 1 || duracao !== 15 || Number(resultado.duracao_segundos) !== 15 || clipes.some(c => c.duracao_segundos !== 15 || !c.prompt_flow)) {
+  if (clipes.length !== 1 || duracao !== DURACAO_PADRAO_DIRETOR || Number(resultado.duracao_segundos) !== DURACAO_PADRAO_DIRETOR || clipes.some(c => c.duracao_segundos !== DURACAO_PADRAO_DIRETOR || !c.prompt_flow)) {
     throw new Error("A estratégia retornada não passou na validação dos clipes. Gere novamente.");
   }
-  if (duracao !== 15) throw new Error("O vídeo precisa ter exatamente 15 segundos.");
+  if (duracao !== DURACAO_PADRAO_DIRETOR) throw new Error("O vídeo precisa ter exatamente 10 segundos.");
   let promptVideo = String(resultado.prompt_video || "").trim().slice(0, 12000);
   if (!resultado.formato_escolhido || !promptVideo) throw new Error("A IA não retornou uma estratégia completa.");
+  const ganchos = validarGanchos(resultado.ganchos, nome);
+  const palavraChave = palavraChaveProduto(nome);
+  const hashtagsEntrada = Array.isArray(resultado.hashtags) ? resultado.hashtags : [];
+  const hashtags = [...new Set(hashtagsEntrada.map(x => {
+    const t = String(x || "").replace(/[^#\p{L}\p{N}_]/gu, "").slice(0, 25);
+    return t.startsWith("#") ? t : "#" + t;
+  }).filter(x => /^#[\p{L}\p{N}_]{2,}$/u.test(x) && !/promo|desconto|oferta|venda|viral|ranking|avaliacao|preco|barato|comprador/i.test(normalizarTexto(x))))].slice(0, 3);
+  const termosTag = palavraChave.split(/\s+/).filter(Boolean);
+  const tagsBase = [
+    "#" + (termosTag[0] || "produto").replace(/[^\p{L}\p{N}]/gu, ""),
+    "#" + ((termosTag[0] || "produto") + "Shopee").replace(/[^\p{L}\p{N}]/gu, ""),
+    "#AchadinhosShopee"
+  ];
+  for (const tag of tagsBase) if (hashtags.length < 3 && !hashtags.some(x => normalizarTexto(x) === normalizarTexto(tag))) hashtags.push(tag);
+  const corpoLegenda = legendaSegura(resultado.legenda || (palavraChave + ". Confira no link!"));
+  const tagsFinal = hashtags.slice(0, 3);
+  const textoTags = tagsFinal.join(" ");
+  const limiteCorpo = Math.max(0, 149 - textoTags.length);
+  const semTags = corpoLegenda.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
+  const corpoCurto = semTags.length > limiteCorpo
+    ? semTags.slice(0, limiteCorpo).replace(/\s+\S*$/, "").trim()
+    : semTags;
+  const legenda = (corpoCurto + " " + textoTags).trim();
+  const quantidadeHashtags = (legenda.match(/#[\p{L}\p{N}_]+/gu) || []).length;
+  if (!legenda || legenda.length > 150 || palavras(legenda).length > 35 || quantidadeHashtags < 3) {
+    throw new Error("A legenda não passou na validação de até 150 caracteres e 3 hashtags.");
+  }
+  const falaValidada = String(clipes[0].fala || "");
+  if (palavras(falaValidada).length > LIMITE_FALA_DIRETOR) throw new Error("A fala ultrapassou 22 palavras; gere novamente.");
+  const continuidadeValidada = validarContinuidade(resultado.continuidade);
   const estrategia = {
     ...resultado,
+    ganchos,
+    palavra_chave: palavraChave,
+    legenda,
+    hashtags,
+    continuidade: continuidadeValidada,
+    modelo_flow: modeloFlow,
+    limite_clipe_segundos: limiteClipe,
     categoria,
     analise_imagem: analiseImagem,
     fontes_pesquisadas: fontes,

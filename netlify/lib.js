@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
+import { palavras, legendaSegura, palavraChaveProduto, validarGanchos, validarContinuidade, normalizarTexto } from "./diretor-validacao.js";
 
 export const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
 export const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });
@@ -165,7 +166,7 @@ async function iaJsonDiretor(prompt, produtoNome = "produto") {
   const limite = setTimeout(() => controladores.forEach(c => c.abort()), 50000);
   const validar = async (chamar) => {
     const resposta = await chamar();
-    if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length) {
+    if (!resposta?.formato_escolhido || !resposta?.prompt_video || !Array.isArray(resposta?.clipes) || !resposta.clipes.length || !Array.isArray(resposta?.ganchos) || resposta.ganchos.length !== 3) {
       throw new Error("O provedor retornou uma estratégia incompleta ou sem roteiro.");
     }
     // O Diretor IA entrega um único vídeo de 15 segundos, não uma sequência de clipes.
@@ -452,8 +453,13 @@ function nomeCurtoFalado(nome) {
   return palavras.slice(0, 3).join(" ") || "produto";
 }
 
+
 export async function pesquisarEstrategia(p) {
   const nome = String(p.nome || p.productName || "produto").slice(0, 250);
+  const modeloFlow = String(process.env.FLOW_MODELO || "Omni Flash 1.1").slice(0, 80);
+  const limiteInformado = Number(process.env.CLIPE_MAX || 15);
+  const limiteClipe = Number.isFinite(limiteInformado) ? Math.max(1, Math.min(60, limiteInformado)) : 15;
+  if (15 > limiteClipe) throw new Error("A duração de 15 segundos excede CLIPE_MAX configurado para o Flow.");
   const categoria = categoriaDiretor(nome, p.categoria || p.category);
   const dadosProduto = {
     nome,
@@ -524,6 +530,10 @@ export async function pesquisarEstrategia(p) {
     "ETAPA 1 — VERDADE E VALOR DO PRODUTO: separe fatos confirmados no anúncio, fatos visíveis na imagem, opiniões de compradores e lacunas. Use a descrição e as características do anúncio para identificar material/composição, textura, acabamento, caimento, construção, funcionalidades e diferenciais; a imagem sozinha não comprova composição, qualidade, durabilidade ou desempenho. Quando o anúncio informar o tecido/material, explique em linguagem simples por que essa informação importa, sem atribuir propriedades não comprovadas. Use avaliações apenas como percepção de compradores, indicando padrões recorrentes quando houver volume suficiente; nunca transforme opinião em garantia. Analise preço somente se houver preço atual confiável e referência comparável do mesmo produto ou de produtos realmente equivalentes. Só chame de barato, promoção, ótimo preço ou custo-benefício quando a comparação sustentar isso; sem comparação confiável, não faça afirmação de preço. Nunca invente desconto, escassez, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios. Alegações promocionais no título (como zero transparência, à prova d'água, antialérgico, compressão ou durabilidade) não são fatos verificados só por aparecerem no anúncio.",
     "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
     "ETAPA 3 — ROTEIRO OBRIGATÓRIO: a fala precisa dizer claramente o NOME DO PRODUTO (use uma versão curta, mas reconhecível, do nome exato do anúncio) e apresentar PELO MENOS DOIS benefícios ou características úteis, reais e confirmados nos dados do anúncio ou claramente visíveis. Não basta dizer apenas 'olha esse produto', 'confira este item' ou mostrar o produto sem identificá-lo. Estruture a fala em português brasileiro: nome do produto + dois benefícios/características confirmados + CTA. Exemplo de estrutura, não copie literalmente: 'Essa [nome do produto] tem [característica/benefício 1] e [característica/benefício 2]. Clique e confira!'. Se não houver dois benefícios comprováveis, cite duas características objetivas confirmadas, sem inventar vantagens. Comece com o produto visível nos primeiros 2 segundos, demonstre ao menos uma característica real em ação quando for possível e seguro. A fala deve soar espontânea, específica e caber naturalmente em 15 segundos; use um nome curto de 2 a 4 palavras, nunca leia o título completo do anúncio. Não simule depoimento ou experiência pessoal que não aconteceu.",
+    "ETAPA 2A — TRÊS GANCHOS PARA TESTE: produza EXATAMENTE três aberturas realmente diferentes, uma de problema e solução, uma de curiosidade e uma de demonstração visual. Cada uma deve ter uma frase curta (máximo 12 palavras) e uma abertura visual executável nos primeiros 2 segundos. Não repita a mesma frase trocando poucas palavras. Não invente características, não use preço, desconto, escassez, número de vendas ou promessas. Retorne em ganchos: [{tipo:'Problema e solução',texto:'...',abertura_visual:'...'},{tipo:'Curiosidade',texto:'...',abertura_visual:'...'},{tipo:'Demonstração',texto:'...',abertura_visual:'...'}]. O vídeo principal continua com 15 segundos; os três ganchos são alternativas de abertura, não três chamadas de IA nem três vídeos completos.",
+    "ETAPA 2B — PALAVRA-CHAVE E LEGENDA: escolha uma palavra-chave curta usando somente termos do nome e dos dados confirmados do produto. Gere uma legenda pronta para publicação com no máximo 150 caracteres, incluindo 3 a 5 hashtags específicas. Não inclua preço, valores, desconto, promoção, quantidade de vendas, ranking, avaliações ou promessas absolutas. A legenda deve identificar o produto e convidar a conferir o link.",
+    "ETAPA 3A — RETENÇÃO E LIMITES: produto claramente visível desde o primeiro segundo; uma mensagem principal; uma demonstração simples e real; nada de introdução longa. A fala total tem no máximo 30 palavras e deve caber em 15 segundos em ritmo natural. Cada cena/trecho descrito deve conter apenas fatos confirmados. Mantenha exatamente a mesma pessoa, roupa, cenário, iluminação e identidade visual durante todo o vídeo.",
+    "MODELO DE GERAÇÃO CONFIGURADO: " + modeloFlow + ". Duração solicitada: 15 segundos; limite máximo configurado: " + limiteClipe + " segundos. Não altere a duração solicitada.",
     "ETAPA 4 — VÍDEO ÚNICO PARA GOOGLE FLOW: retorne apenas UM vídeo, UM clipe e UM prompt_flow, com duração EXATA de 15 segundos, formato vertical 9:16. Não divida em cenas ou partes. Use 0–3s para gancho visual com produto visível; 3–9s para apresentar uma ou duas características confirmadas; 9–15s para recomendação e CTA. Tudo em uma única tomada contínua. Escolha o melhor meio de apresentação. A fala deve ser natural, em português brasileiro, usar nome curto de 2 a 4 palavras (nunca o título completo) e caber em 15 segundos sem acelerar. O prompt_flow deve ser completo e pronto para colar no Flow, contendo produto, cenário, apresentador quando adequado, ação contínua, câmera, luz, fala, texto, áudio e restrições de fidelidade. Sem cortes ou transições.",
     "ETAPA 4A — SE FOR ROUPA OU MODA FITNESS: a pessoa deve vestir exatamente a peça anunciada, sem adicionar roupa por cima nem alterar cor, corte ou modelo. Em 15 segundos, use ações simples e realistas para apresentar a peça. Não tente provar ausência de transparência com a mão, alongamento, agachamento ou teste visual; não afirme que o tecido não fica transparente. Só demonstre detalhes visíveis/confirmados. Nunca levantar, puxar ou expor a roupa. A fala deve usar nome curto e destacar somente elementos confirmados.",
     "CONTINUIDADE: crie um bloco compacto com identidade visual da pessoa (se houver), roupa igual à referência, cenário, iluminação e câmera. Como existe apenas um vídeo contínuo, não descreva vários clipes nem repita instruções por clipe. Se uma pessoa não acrescentar valor, escolha mãos, demonstração ou produto em destaque.",
@@ -543,6 +553,10 @@ export async function pesquisarEstrategia(p) {
       nota_adequacao: 0,
       justificativa: "...",
       gancho: "...",
+      ganchos: [{ tipo: "Problema e solução", texto: "...", abertura_visual: "..." }, { tipo: "Curiosidade", texto: "...", abertura_visual: "..." }, { tipo: "Demonstração", texto: "...", abertura_visual: "..." }],
+      palavra_chave: "...",
+      legenda: "... com 3 a 5 hashtags e até 150 caracteres",
+      hashtags: ["#...", "#...", "#..."],
       duracao_segundos: 15,
       continuidade: { pessoa: "... ou sem pessoa", roupa: "...", cenario: "...", iluminacao: "...", camera: "..." },
       clipes: [{ numero: 1, duracao_segundos: 15, objetivo: "apresentar e vender em um único vídeo", visual: "...", acao: "...", camera: "...", fala: "...", texto_tela: "...", prompt_flow: "um único prompt completo para vídeo contínuo de 15 segundos" }],
@@ -571,8 +585,45 @@ export async function pesquisarEstrategia(p) {
   if (duracao !== 15) throw new Error("O vídeo precisa ter exatamente 15 segundos.");
   let promptVideo = String(resultado.prompt_video || "").trim().slice(0, 12000);
   if (!resultado.formato_escolhido || !promptVideo) throw new Error("A IA não retornou uma estratégia completa.");
+  const ganchos = validarGanchos(resultado.ganchos, nome);
+  const palavraChave = palavraChaveProduto(nome);
+  const hashtagsEntrada = Array.isArray(resultado.hashtags) ? resultado.hashtags : [];
+  const hashtags = [...new Set(hashtagsEntrada.map(x => {
+    const t = String(x || "").replace(/[^#\p{L}\p{N}_]/gu, "").slice(0, 25);
+    return t.startsWith("#") ? t : "#" + t;
+  }).filter(x => /^#[\p{L}\p{N}_]{2,}$/u.test(x) && !/promo|desconto|oferta|venda|viral|ranking|avaliacao|preco|barato|comprador/i.test(normalizarTexto(x))))].slice(0, 3);
+  const termosTag = palavraChave.split(/\s+/).filter(Boolean);
+  const tagsBase = [
+    "#" + (termosTag[0] || "produto").replace(/[^\p{L}\p{N}]/gu, ""),
+    "#" + ((termosTag[0] || "produto") + "Shopee").replace(/[^\p{L}\p{N}]/gu, ""),
+    "#AchadinhosShopee"
+  ];
+  for (const tag of tagsBase) if (hashtags.length < 3 && !hashtags.some(x => normalizarTexto(x) === normalizarTexto(tag))) hashtags.push(tag);
+  const corpoLegenda = legendaSegura(resultado.legenda || (palavraChave + ". Confira no link!"));
+  const tagsFinal = hashtags.slice(0, 3);
+  const textoTags = tagsFinal.join(" ");
+  const limiteCorpo = Math.max(0, 149 - textoTags.length);
+  const semTags = corpoLegenda.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
+  const corpoCurto = semTags.length > limiteCorpo
+    ? semTags.slice(0, limiteCorpo).replace(/\s+\S*$/, "").trim()
+    : semTags;
+  const legenda = (corpoCurto + " " + textoTags).trim();
+  const quantidadeHashtags = (legenda.match(/#[\p{L}\p{N}_]+/gu) || []).length;
+  if (!legenda || legenda.length > 150 || palavras(legenda).length > 35 || quantidadeHashtags < 3) {
+    throw new Error("A legenda não passou na validação de até 150 caracteres e 3 hashtags.");
+  }
+  const falaValidada = String(clipes[0].fala || "");
+  if (palavras(falaValidada).length > 30) throw new Error("A fala ultrapassou 30 palavras; gere novamente.");
+  const continuidadeValidada = validarContinuidade(resultado.continuidade);
   const estrategia = {
     ...resultado,
+    ganchos,
+    palavra_chave: palavraChave,
+    legenda,
+    hashtags,
+    continuidade: continuidadeValidada,
+    modelo_flow: modeloFlow,
+    limite_clipe_segundos: limiteClipe,
     categoria,
     analise_imagem: analiseImagem,
     fontes_pesquisadas: fontes,

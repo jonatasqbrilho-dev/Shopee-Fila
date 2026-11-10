@@ -33,7 +33,7 @@ async function groq(prompt) {
 }
 const modeloGemini = () => (pGemini ??= (async () => {
   if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
-  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${process.env.GEMINI_API_KEY}`),j=await r.json(); if(!j.models) throw new Error("Gemini modelos: "+JSON.stringify(j).slice(0,200));
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${process.env.GEMINI_API_KEY}`,{signal:AbortSignal.timeout(3500)}),j=await r.json(); if(!j.models) throw new Error("Gemini modelos: "+JSON.stringify(j).slice(0,200));
   const nomes=j.models.filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent")).map(m=>m.name.replace("models/",""));
   return nomes.filter(n=>/^gemini-\d+(\.\d+)?-flash$/.test(n)).sort((a,b)=>parseFloat(b.split("-")[1])-parseFloat(a.split("-")[1]))[0] || nomes.find(n=>/flash/.test(n)&&!/image|tts|live|embed/.test(n)) || nomes[0];
 })());
@@ -154,14 +154,13 @@ async function pesquisarWebProduto(nome, categoria) {
     `${categoria} como apresentar produto vídeo demonstração afiliado`,
     `Shopee Vídeo ${categoria} ideias de apresentação produto`
   ];
-  const encontrados = [];
-  for (const q of consultas) {
+  const resultados = await Promise.all(consultas.map(async q => {
     try {
       const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q);
-      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaResearch/1.0)", "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.7" } });
-      if (!r.ok) continue;
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaResearch/1.0)", "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.7" }, signal: AbortSignal.timeout(3500) });
+      if (!r.ok) return [];
       const html = await r.text();
-      const snippets = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)]
+      return [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)]
         .filter(m => /result__a/.test(m[1]))
         .map(m => {
           const h = m[1].match(/href=["']([^"']+)["']/i)?.[1] || "";
@@ -173,11 +172,10 @@ async function pesquisarWebProduto(nome, categoria) {
           const sn = after.match(/result__snippet[^>]*>([\s\S]*?)<\/[^>]+>/i)?.[1] || "";
           return { title, url: link, snippet: stripTags(sn), query: q };
         }).filter(x => x.title && /^https?:\/\//i.test(x.url));
-      encontrados.push(...snippets);
-    } catch (e) { console.warn("Pesquisa web:", e.message); }
-  }
+    } catch (e) { console.warn("Pesquisa web:", e.message); return []; }
+  }));
   const vistos = new Set();
-  return encontrados.filter(x => { if (vistos.has(x.url)) return false; vistos.add(x.url); return true; }).slice(0, 12);
+  return resultados.flat().filter(x => { if (vistos.has(x.url)) return false; vistos.add(x.url); return true; }).slice(0, 12);
 }
 
 export async function pesquisarEstrategia(p) {
@@ -201,9 +199,8 @@ export async function pesquisarEstrategia(p) {
   for (const k of Object.keys(dadosProduto)) {
     if (dadosProduto[k] === null || dadosProduto[k] === "") delete dadosProduto[k];
   }
-  const promptCategoria = `Classifique este produto em uma categoria comercial curta, sem inventar características. Dados: ${JSON.stringify(dadosProduto)}`;
-  let categoria = "produto";
-  try { const c = await iaJson(`Responda somente JSON: {"categoria":"..."}\\n${promptCategoria}`); categoria = String(c.categoria || categoria).slice(0, 80); } catch {}
+  // Usa a categoria cadastrada quando existe; evita gastar uma chamada de IA só para classificar.
+  const categoria = String(p.categoria || p.category || nome).slice(0, 80);
 
   // Memória persistente: recupera aprendizados de produtos anteriores da mesma categoria.
   let aprendizados = [];

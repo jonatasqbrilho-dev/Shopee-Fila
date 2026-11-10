@@ -31,12 +31,8 @@ async function groq(prompt) {
     return lerJson(j.choices[0].message.content);
   } catch(e){pGroq=undefined;throw e;}
 }
-const modeloGemini = () => (pGemini ??= (async () => {
-  if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
-  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${process.env.GEMINI_API_KEY}`,{signal:AbortSignal.timeout(1200)}),j=await r.json(); if(!j.models) throw new Error("Gemini modelos: "+JSON.stringify(j).slice(0,200));
-  const nomes=j.models.filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent")).map(m=>m.name.replace("models/",""));
-  return nomes.filter(n=>/^gemini-\d+(\.\d+)?-flash$/.test(n)).sort((a,b)=>parseFloat(b.split("-")[1])-parseFloat(a.split("-")[1]))[0] || nomes.find(n=>/flash/.test(n)&&!/image|tts|live|embed/.test(n)) || nomes[0];
-})());
+// Usa um modelo Flash estável sem consultar a lista de modelos a cada execução.
+const modeloGemini = () => Promise.resolve(process.env.GEMINI_MODEL || "gemini-2.5-flash");
 async function gemini(prompt) {
   try {
     const model=await modeloGemini();

@@ -593,9 +593,9 @@ export async function pesquisarEstrategia(p) {
     "#" + (termosTag.slice(0, 2).join("").replace(/[^\p{L}\p{N}]/gu, "") || "achadinhos"),
     "#ShopeeAchados"
   ];
-  for (const tag of tagsBase) if (hashtags.length < 5 && !hashtags.some(x => normalizarTexto(x) === normalizarTexto(tag))) hashtags.push(tag);
+  for (const tag of tagsBase) if (hashtags.length < 3 && !hashtags.some(x => normalizarTexto(x) === normalizarTexto(tag))) hashtags.push(tag);
   const corpoLegenda = legendaSegura(resultado.legenda || (palavraChave + ". Confira no link!"));
-  const tagsFinal = hashtags.slice(0, 5);
+  const tagsFinal = hashtags.slice(0, 3);
   const textoTags = tagsFinal.join(" ");
   const limiteCorpo = Math.max(0, 149 - textoTags.length);
   const semTags = corpoLegenda.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();

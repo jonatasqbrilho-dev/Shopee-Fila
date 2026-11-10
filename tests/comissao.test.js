@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calcularComissaoUnidade, ordenarPorComissaoUnidade } from "../netlify/lib/comissao.js";
+import { calcularComissaoUnidade, ordenarPorComissaoUnidade, produtoElegivel } from "../netlify/lib/comissao.js";
 
 test("calcula comissão unitária usando preço vezes taxa decimal", () => {
   assert.equal(calcularComissaoUnidade(30, 0.2), 6);
@@ -25,4 +25,11 @@ test("ordena maior comissão primeiro e mantém dados ausentes no fim", () => {
   ];
   assert.deepEqual(ordenarPorComissaoUnidade(produtos).map(p => p.item_id), ["b", "d", "a", "c"]);
   assert.deepEqual(ordenarPorComissaoUnidade(produtos, "asc").map(p => p.item_id), ["a", "d", "b", "c"]);
+});
+
+test("preserva os filtros mínimos de 100 vendas e nota 4,5", () => {
+  assert.equal(produtoElegivel({ sales: 100, ratingStar: 4.5 }), true);
+  assert.equal(produtoElegivel({ sales: 99, ratingStar: 5 }), false);
+  assert.equal(produtoElegivel({ sales: 500, ratingStar: 4.49 }), false);
+  assert.equal(produtoElegivel({ sales: null, ratingStar: 5 }), false);
 });

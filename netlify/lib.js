@@ -164,10 +164,29 @@ async function geminiDiretor(prompt, options = {}) {
 
 async function iaJson(prompt){
   const erros=[];
-  for(const [nome,chamar] of [["Groq",groq],["Gemini",gemini]]){
-    try{return await chamar(prompt)}catch(e){erros.push(nome+": "+e.message);console.error("IA:",nome,e.message)}
+  const controladores=[new AbortController(),new AbortController()];
+  // A geração comum roda em paralelo para não gastar o tempo limite em dois provedores sequenciais.
+  // 6 segundos por provedor e corte global em 6,5 s deixam margem para SEO e gravação no Netlify.
+  const limite=setTimeout(()=>controladores.forEach(c=>c.abort()),6500);
+  const provedores=[["Groq",groq],["Gemini",gemini]];
+  try{
+    const tarefas=provedores.map(async([nome,chamar],i)=>{
+      try{
+        return await chamar(prompt,{signal:controladores[i].signal,timeoutMs:6000});
+      }catch(e){
+        const detalhe=nome+": "+(e?.name==="AbortError"||e?.name==="TimeoutError"?"tempo limite excedido":e.message);
+        erros.push(detalhe);
+        console.error("IA:",detalhe);
+        throw e;
+      }
+    });
+    return await Promise.any(tarefas);
+  }catch(e){
+    throw new Error("Os serviços de IA não responderam. "+(erros.join(" | ")||"Os provedores não retornaram uma resposta válida."));
+  }finally{
+    clearTimeout(limite);
+    controladores.forEach(c=>{if(!c.signal.aborted)c.abort();});
   }
-  throw new Error("Os serviços de IA não responderam. "+erros.join(" | "));
 }
 
 // O Diretor IA produz uma estratégia extensa: usa os dois provedores em paralelo,

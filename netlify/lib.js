@@ -343,7 +343,7 @@ Dados do produto: ${JSON.stringify({nome:p.nome,descricao:p.descricao,marca:p.ma
   const motivo=String(r.motivo||"Adequação criativa estimada com base nos dados disponíveis do produto.").slice(0,500);
   const legenda=limitarLegenda(limparLegendaVendas(r.legenda));
   if(!legenda) throw new Error("A IA não retornou uma legenda válida. Tente novamente.");
-  return {video_prompt,nota,motivo,legenda};
+  return {video_prompt,nota,motivo,legenda,seo};
 }
 
 const KW=(process.env.KEYWORDS||"fone bluetooth,organizador de cozinha,luminária led,garrafa térmica,suporte de celular,mini processador").split(",").map(s=>s.trim());

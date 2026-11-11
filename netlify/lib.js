@@ -89,13 +89,19 @@ async function groq(prompt, options = {}) {
       const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method:"POST",
         headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"},
-        body:JSON.stringify({model,messages:[{role:"user",content:textoPrompt}],max_completion_tokens:options.maxTokens || 1400,...(options.reasoningEffort?{reasoning_effort:options.reasoningEffort}:{}),...(usarFormatoJson?{response_format:{type:"json_object"}}:{})}),
+        body:JSON.stringify({model,messages:[{role:"user",content:textoPrompt}],max_completion_tokens:options.maxTokens || 2400,...((options.reasoningEffort || (String(model).startsWith("openai/gpt-oss") ? "low" : undefined))?{reasoning_effort:options.reasoningEffort || "low"}:{}),...(usarFormatoJson?{response_format:{type:"json_object"}}:{})}),
         signal:options.signal || AbortSignal.timeout(options.timeoutMs || 2500)
       });
       const j=await r.json();
-      if(!r.ok || !j.choices?.[0]?.message?.content) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,500));
-      if (j.choices[0].finish_reason === "length") throw new Error("Groq cortou a resposta por limite de tokens.");
-      return lerJson(j.choices[0].message.content);
+      const escolha=j.choices?.[0];
+      const conteudo=typeof escolha?.message?.content==="string"?escolha.message.content.trim():"";
+      if(!r.ok) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,500));
+      if(!conteudo) {
+        const motivo=escolha?.finish_reason || "sem motivo informado";
+        throw new Error("Groq HTTP "+r.status+": resposta sem conteúdo aproveitável (finish_reason="+motivo+"). O modelo pode ter consumido os tokens em raciocínio.");
+      }
+      if (escolha.finish_reason === "length") throw new Error("Groq cortou a resposta por limite de tokens.");
+      return lerJson(conteudo);
     };
     try {
       return await executar(true, prompt);

@@ -285,7 +285,7 @@ const SEO_VARIACOES = [
   " compacto", " portátil", " organizador", " Shopee"
 ];
 async function pesquisarPalavrasChaveSEO(nomeProduto) {
-  const base = String(nomeProduto || "produto").replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 110);
+  const base = String(nomeProduto || "produto").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 110);
   const locais = SEO_VARIACOES.map(s => base + s);
   const consultas = [base, base + " comprar", base + " como usar"];
   let google = [];
@@ -306,7 +306,7 @@ async function pesquisarPalavrasChaveSEO(nomeProduto) {
   }
   const vistos = new Set();
   const termos = [...google, ...locais, base].filter(Boolean).filter(termo => {
-    const chave = termo.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+    const chave = termo.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (!chave || vistos.has(chave)) return false;
     vistos.add(chave);
     return true;

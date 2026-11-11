@@ -74,24 +74,26 @@ async function pesquisarConcorrentes(term) {
 function makeTrendRanking(products,snapshots) {
   const grouped=new Map();
   for(const s of snapshots||[]) {
-    if(!s.product_id) continue;
+    if(!s.product_id||!s.captured_at) continue;
     const a=grouped.get(s.product_id)||[];
     a.push(s);grouped.set(s.product_id,a);
   }
   const enriched=(products||[]).map(p=>{
     const history=(grouped.get(p.id)||[]).sort((a,b)=>new Date(a.captured_at)-new Date(b.captured_at));
     const first=history[0],last=history[history.length-1];
-    const delta=history.length>1?Math.max(0,Number(last.sales||0)-Number(first.sales||0)):0;
-    const hours=history.length>1?Math.max(1,(new Date(last.captured_at)-new Date(first.captured_at))/3600000):0;
-    const velocity=hours?delta*24/hours:0;
-    return {...p,sales_delta:delta,sales_per_day:Number(velocity.toFixed(2)),snapshot_count:history.length,trend_confirmed:history.length>1,trend_state:history.length<2?"Em observação":delta>0?"Crescendo":"Estável"};
+    const elapsedMs=history.length>1?new Date(last.captured_at).getTime()-new Date(first.captured_at).getTime():0;
+    const enoughHistory=history.length>1&&Number.isFinite(elapsedMs)&&elapsedMs>=24*60*60*1000;
+    const delta=enoughHistory?Number(last.sales||0)-Number(first.sales||0):null;
+    const velocity=enoughHistory?delta*86400000/elapsedMs:null;
+    const state=!enoughHistory?(history.length>1?"Aguardando intervalo mínimo de 24h":"Aguardando novas medições"):delta>0?"Crescendo":delta<0?"Em queda":"Estável";
+    return {...p,sales_delta:delta,sales_per_day:velocity===null?null:Number(velocity.toFixed(2)),snapshot_count:history.length,trend_confirmed:enoughHistory,trend_state:state,trend_hours:enoughHistory?Number((elapsedMs/3600000).toFixed(1)):null};
   });
   const maxSales=Math.max(1,...enriched.map(x=>Math.log1p(Number(x.vendas||0))));
-  const maxVelocity=Math.max(1,...enriched.map(x=>Math.log1p(x.sales_per_day)));
+  const maxVelocity=Math.max(1,...enriched.map(x=>Math.log1p(Math.max(0,Number(x.sales_per_day)||0))));
   const maxCommission=Math.max(0.01,...enriched.map(x=>Number(x.comissao||0)));
   return enriched.map(p=>{
     const salesScore=Math.log1p(Number(p.vendas||0))/maxSales;
-    const velocityScore=Math.log1p(p.sales_per_day)/maxVelocity;
+    const velocityScore=p.trend_confirmed?Math.log1p(Math.max(0,Number(p.sales_per_day)||0))/maxVelocity:0;
     const commissionScore=clamp(Number(p.comissao||0)/maxCommission,0,1);
     const ratingScore=clamp(Number(p.avaliacao||0)/5,0,1);
     const discountScore=clamp(Number(p.desconto||0)/100,0,1);

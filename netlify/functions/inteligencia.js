@@ -1,4 +1,4 @@
-import { db, json, autorizado } from "../lib.js";
+import { db, json, autorizado, shopee } from "../lib.js";
 
 const norm = s => String(s || "").toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 const clean = (s, max = 300) => String(s || "").replace(/[<>]/g, "").trim().slice(0, max);
@@ -103,30 +103,24 @@ function makeTrendRanking(products,snapshots) {
 async function dashboard(sb,url) {
   const start=(url.searchParams.get("inicio")||new Date(Date.now()-30*86400000).toISOString().slice(0,10))+"T00:00:00.000Z";
   const end=(url.searchParams.get("fim")||new Date().toISOString().slice(0,10))+"T23:59:59.999Z";
-  const [pr,ps,ms,mem,tests,keywords,competitors,queue]=await Promise.all([
+  const [pr,ps,ms,periods,mem,tests,keywords,competitors,queue]=await Promise.all([
     sb.from("produtos").select("id,item_id,nome,imagem,preco,desconto,vendas,avaliacao,comissao,nota,status,atualizado_em,cliques_convertidos,pedidos,itens_vendidos,valor_pedidos,comissao_estimada,comissao_validada,conversao").order("vendas",{ascending:false}).limit(1000),
     sb.from("shopee_product_snapshots").select("product_id,sales,price,discount,rating,commission,captured_at").gte("captured_at",new Date(Date.now()-90*86400000).toISOString()).lte("captured_at",end).order("captured_at",{ascending:true}).limit(10000),
     sb.from("shopee_metrics_snapshots").select("product_id,item_id,product_name,clicks,orders,items_sold,order_value,estimated_commission,validated_commission,conversion,captured_at").gte("captured_at",new Date(new Date(start).getTime()-86400000).toISOString()).lte("captured_at",end).order("captured_at",{ascending:true}).limit(10000),
+    sb.from("shopee_conversion_periods").select("*").eq("period_start",start.slice(0,10)).eq("period_end",end.slice(0,10)).order("estimated_commission",{ascending:false}).limit(1000),
     sb.from("diretor_ia_memoria").select("id,produto_id,produto_nome,categoria,formato_escolhido,angulo_escolhido,gancho,estrategia,feedback,criado_em").order("criado_em",{ascending:false}).limit(60),
     sb.from("shopee_hook_tests").select("*").order("created_at",{ascending:false}).limit(100),
     sb.from("shopee_keyword_history").select("*").order("created_at",{ascending:false}).limit(40),
     sb.from("shopee_competitor_research").select("*").order("created_at",{ascending:false}).limit(20),
     sb.from("shopee_video_queue").select("*").gte("scheduled_date",start.slice(0,10)).lte("scheduled_date",end.slice(0,10)).order("scheduled_date").order("position").limit(500)
   ]);
-  for(const [label,r] of [["produtos",pr],["snapshots",ps],["métricas",ms],["memória",mem],["testes",tests],["SEO",keywords],["concorrentes",competitors],["fila",queue]]) if(r.error) throw new Error("Falha ao carregar "+label+": "+r.error.message);
+  for(const [label,r] of [["produtos",pr],["snapshots",ps],["métricas",ms],["relatórios Shopee",periods],["memória",mem],["testes",tests],["SEO",keywords],["concorrentes",competitors],["fila",queue]]) if(r.error) throw new Error("Falha ao carregar "+label+": "+r.error.message);
   const products=pr.data||[];
   const trend=makeTrendRanking(products,ps.data||[]);
   const byId=new Map(products.map(p=>[p.id,p]));
-  const metricGroups=new Map();
-  for(const s of ms.data||[]) {const a=metricGroups.get(s.product_id)||[];a.push(s);metricGroups.set(s.product_id,a);}
-  const report=[...metricGroups.entries()].map(([id,arr])=>{
-    arr.sort((a,b)=>new Date(a.captured_at)-new Date(b.captured_at));
-    const first=arr[0],last=arr[arr.length-1],p=byId.get(id)||{};
-    const delta=field=>Math.max(0,Number(last[field]||0)-Number(first[field]||0));
-    return {product_id:id,name:last.product_name||p.nome||"Produto",image:p.imagem||null,clicks:delta("clicks"),orders:delta("orders"),items_sold:delta("items_sold"),order_value:delta("order_value"),estimated_commission:delta("estimated_commission"),validated_commission:delta("validated_commission"),conversion:last.conversion||0,snapshots:arr.length,period_start:first.captured_at,period_end:last.captured_at};
-  }).sort((a,b)=>b.estimated_commission-a.estimated_commission);
+  const report=(periods.data||[]).map(x=>({product_id:x.product_id,name:x.product_name||byId.get(x.product_id)?.nome||"Produto",image:byId.get(x.product_id)?.imagem||null,clicks:Number(x.clicks||0),orders:Number(x.orders||0),items_sold:Number(x.items_sold||0),order_value:Number(x.order_value||0),estimated_commission:Number(x.estimated_commission||0),validated_commission:0,conversion:x.clicks?Number((x.orders/x.clicks*100).toFixed(2)):0,snapshots:1,period_start:x.period_start,period_end:x.period_end}));
   const totals=report.reduce((a,x)=>{for(const k of ["clicks","orders","items_sold","order_value","estimated_commission","validated_commission"])a[k]+=Number(x[k]||0);return a;},{clicks:0,orders:0,items_sold:0,order_value:0,estimated_commission:0,validated_commission:0});
-  return json({ok:true,period:{start,end},products,trend:trend.slice(0,100),snapshots:ps.data||[],report,totals,memories:mem.data||[],hook_tests:tests.data||[],keywords:keywords.data||[],competitors:competitors.data||[],queue:queue.data||[],notes:{trend:"Pontuação de potencial, não garantia de vendas. Crescimento real só fica confirmado após pelo menos duas medições.",reports:"Relatórios por período começam a acumular histórico a partir da ativação desta central."}});
+  return json({ok:true,period:{start,end},products,trend:trend.slice(0,100),snapshots:ps.data||[],report,totals,memories:mem.data||[],hook_tests:tests.data||[],keywords:keywords.data||[],competitors:competitors.data||[],queue:queue.data||[],notes:{trend:"Pontuação de potencial, não garantia de vendas. Crescimento real só fica confirmado após pelo menos duas medições.",reports:"Relatório consultado diretamente na API de conversões da Shopee para o intervalo selecionado. A comissão validada não é discriminada por item nesta consulta."}});
 }
 
 export default async req => {
@@ -142,6 +136,36 @@ export default async req => {
   const body=await req.json().catch(()=>null);
   if(!body||typeof body!=="object"||Array.isArray(body))return json({erro:"JSON inválido."},400);
   try {
+    if(body.acao==="sincronizar_relatorio") {
+      const startDate=String(body.inicio||""),endDate=String(body.fim||"");
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(startDate)||!/^\d{4}-\d{2}-\d{2}$/.test(endDate))throw new Error("Informe as datas inicial e final.");
+      const startMs=Date.parse(startDate+"T00:00:00Z"),endMs=Date.parse(endDate+"T23:59:59Z");
+      if(!Number.isFinite(startMs)||!Number.isFinite(endMs)||endMs<startMs)throw new Error("Intervalo de datas inválido.");
+      if((endMs-startMs)/86400000>30)throw new Error("Selecione um período de até 31 dias para manter a consulta dentro da janela operacional.");
+      const startUnix=Math.floor(startMs/1000),endUnix=Math.floor(endMs/1000);
+      const query="{ conversionReport(purchaseTimeStart:"+startUnix+",purchaseTimeEnd:"+endUnix+",limit:500) { nodes { clickTime purchaseTime conversionId totalCommission netCommission utmContent orders { orderId orderStatus items { itemId itemName itemPrice qty itemTotalCommission attributionType } } } pageInfo { hasNextPage scrollId } } }";
+      const response=await shopee(query),nodes=response.conversionReport?.nodes||[];
+      const grouped=new Map();
+      for(const n of nodes)for(const order of (n.orders||[]))for(const item of (order.items||[])) {
+        const itemId=String(item.itemId||"");if(!itemId)continue;
+        const row=grouped.get(itemId)||{item_id:itemId,product_name:clean(item.itemName,300)||"Produto",clicks:0,orders:new Set(),items_sold:0,order_value:0,estimated_commission:0};
+        if(n.clickTime)row.clicks++;
+        row.orders.add(String(order.orderId||n.conversionId||""));
+        row.items_sold+=Number(item.qty||0);
+        row.order_value+=Number(item.itemPrice||0)*Number(item.qty||0);
+        row.estimated_commission+=Number(item.itemTotalCommission||0);
+        grouped.set(itemId,row);
+      }
+      const {data:catalog,error:catalogError}=await sb.from("produtos").select("id,item_id,nome");
+      if(catalogError)throw new Error(catalogError.message);
+      const productMap=new Map((catalog||[]).map(p=>[String(p.item_id),p]));
+      const rows=[...grouped.values()].map(x=>({period_start:startDate,period_end:endDate,product_id:productMap.get(x.item_id)?.id||null,item_id:x.item_id,product_name:productMap.get(x.item_id)?.nome||x.product_name,clicks:x.clicks,orders:x.orders.size,items_sold:x.items_sold,order_value:Number(x.order_value.toFixed(2)),estimated_commission:Number(x.estimated_commission.toFixed(2))}));
+      if(rows.length) {
+        const {error}=await sb.from("shopee_conversion_periods").upsert(rows,{onConflict:"period_start,period_end,item_id"});
+        if(error)throw new Error(error.message);
+      }
+      return json({ok:true,period_start:startDate,period_end:endDate,conversions:nodes.length,products:rows.length,has_more:!!response.conversionReport?.pageInfo?.hasNextPage,notice:"Dados consultados diretamente na API de conversões Shopee. O limite desta consulta é de 500 registros retornados."});
+    }
     if(body.acao==="pesquisar_seo") {
       const seo=await pesquisarSEO(body.term);
       const {data,error}=await sb.from("shopee_keyword_history").insert({product_id:body.product_id||null,term:seo.term,category:seo.category,keywords:seo.keywords,source:seo.source}).select("*").single();

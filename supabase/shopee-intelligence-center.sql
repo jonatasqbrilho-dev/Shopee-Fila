@@ -119,7 +119,7 @@ grant all on public.shopee_hook_tests to service_role;
 create or replace function public.shopee_fila_capture_product_snapshot()
 returns trigger
 language plpgsql
-as $
+as $$
 begin
   if tg_op = 'INSERT' then
     insert into public.shopee_product_snapshots
@@ -138,7 +138,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists shopee_fila_product_snapshot on public.produtos;
 create trigger shopee_fila_product_snapshot
@@ -149,7 +149,7 @@ for each row execute function public.shopee_fila_capture_product_snapshot();
 create or replace function public.shopee_fila_capture_metrics_snapshot()
 returns trigger
 language plpgsql
-as $
+as $$
 begin
   if tg_op = 'INSERT' then
     insert into public.shopee_metrics_snapshots
@@ -174,7 +174,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists shopee_fila_metrics_snapshot on public.produtos;
 create trigger shopee_fila_metrics_snapshot

@@ -35,6 +35,24 @@ create table if not exists public.shopee_metrics_snapshots (
 create index if not exists shopee_metrics_snapshots_product_date_idx
   on public.shopee_metrics_snapshots (product_id, captured_at desc);
 
+create table if not exists public.shopee_conversion_periods (
+  id uuid primary key default gen_random_uuid(),
+  period_start date not null,
+  period_end date not null,
+  product_id uuid references public.produtos(id) on delete set null,
+  item_id text not null,
+  product_name text not null,
+  clicks integer not null default 0,
+  orders integer not null default 0,
+  items_sold integer not null default 0,
+  order_value numeric not null default 0,
+  estimated_commission numeric not null default 0,
+  created_at timestamptz not null default now(),
+  unique(period_start,period_end,item_id)
+);
+create index if not exists shopee_conversion_periods_period_idx
+  on public.shopee_conversion_periods (period_start,period_end,estimated_commission desc);
+
 create table if not exists public.shopee_keyword_history (
   id uuid primary key default gen_random_uuid(),
   product_id uuid references public.produtos(id) on delete set null,
@@ -87,22 +105,28 @@ create index if not exists shopee_hook_tests_status_idx
 alter table public.shopee_product_snapshots enable row level security;
 alter table public.shopee_metrics_snapshots enable row level security;
 alter table public.shopee_keyword_history enable row level security;
+alter table public.shopee_conversion_periods enable row level security;
 alter table public.shopee_competitor_research enable row level security;
 alter table public.shopee_hook_tests enable row level security;
 
 grant all on public.shopee_product_snapshots to service_role;
 grant all on public.shopee_metrics_snapshots to service_role;
 grant all on public.shopee_keyword_history to service_role;
+grant all on public.shopee_conversion_periods to service_role;
 grant all on public.shopee_competitor_research to service_role;
 grant all on public.shopee_hook_tests to service_role;
 
 create or replace function public.shopee_fila_capture_product_snapshot()
 returns trigger
 language plpgsql
-as $$
+as $
 begin
-  if tg_op = 'INSERT'
-     or old.vendas is distinct from new.vendas
+  if tg_op = 'INSERT' then
+    insert into public.shopee_product_snapshots
+      (product_id,item_id,product_name,sales,price,discount,rating,commission,captured_at)
+    values
+      (new.id,new.item_id,new.nome,coalesce(new.vendas,0),new.preco,new.desconto,new.avaliacao,new.comissao,now());
+  elsif old.vendas is distinct from new.vendas
      or old.preco is distinct from new.preco
      or old.desconto is distinct from new.desconto
      or old.avaliacao is distinct from new.avaliacao
@@ -114,7 +138,7 @@ begin
   end if;
   return new;
 end;
-$$;
+$;
 
 drop trigger if exists shopee_fila_product_snapshot on public.produtos;
 create trigger shopee_fila_product_snapshot
@@ -125,10 +149,16 @@ for each row execute function public.shopee_fila_capture_product_snapshot();
 create or replace function public.shopee_fila_capture_metrics_snapshot()
 returns trigger
 language plpgsql
-as $$
+as $
 begin
-  if tg_op = 'INSERT'
-     or old.cliques_convertidos is distinct from new.cliques_convertidos
+  if tg_op = 'INSERT' then
+    insert into public.shopee_metrics_snapshots
+      (product_id,item_id,product_name,clicks,orders,items_sold,order_value,estimated_commission,validated_commission,conversion,captured_at)
+    values
+      (new.id,new.item_id,new.nome,coalesce(new.cliques_convertidos,0),coalesce(new.pedidos,0),
+       coalesce(new.itens_vendidos,0),coalesce(new.valor_pedidos,0),coalesce(new.comissao_estimada,0),
+       coalesce(new.comissao_validada,0),coalesce(new.conversao,0),now());
+  elsif old.cliques_convertidos is distinct from new.cliques_convertidos
      or old.pedidos is distinct from new.pedidos
      or old.itens_vendidos is distinct from new.itens_vendidos
      or old.valor_pedidos is distinct from new.valor_pedidos
@@ -144,7 +174,7 @@ begin
   end if;
   return new;
 end;
-$$;
+$;
 
 drop trigger if exists shopee_fila_metrics_snapshot on public.produtos;
 create trigger shopee_fila_metrics_snapshot

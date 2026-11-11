@@ -276,7 +276,51 @@ const limitarPrompt=texto=>{let s=String(texto||"");if(s.length<=850)return s;re
 const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,"").replace(/\b\d+[.,]\d{2}\s?(?:reais)?\b/gi,"").replace(/\b(?:por|de|a partir de)\s+\d+(?:[.,]\d{2})?\s?(?:reais|R\$)?\b/gi,"").replace(/\s{2,}/g," ").trim();
 const removerMetricasVendas=texto=>String(texto||"").replace(/\b(?:\d+[.,]?\d*)\s*(?:mil|milhares|k)?\s*(?:unidades?|produtos?|vendas?|compradores?|clientes?)\b/gi,"").replace(/\b(?:mais vendido|mais vendidos|campe[aã]o de vendas|recorde de vendas|viral|sucesso de vendas|top vendas|ranking|ranking de vendas)\b/gi,"").replace(/\s{2,}/g," ").trim();
 
+
+// OpenSEO Lite integrado ao servidor: tenta sugestões públicas do Google e sempre
+// mantém variações locais gratuitas como fallback, sem depender do navegador/CORS.
+const SEO_VARIACOES = [
+  " como usar", " para que serve", " características", " modelo", " comprar",
+  " avaliação", " review", " vale a pena", " kit", " para casa",
+  " compacto", " portátil", " organizador", " Shopee"
+];
+async function pesquisarPalavrasChaveSEO(nomeProduto) {
+  const base = String(nomeProduto || "produto").replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 110);
+  const locais = SEO_VARIACOES.map(s => base + s);
+  const consultas = [base, base + " comprar", base + " como usar"];
+  let google = [];
+  try {
+    const respostas = await Promise.all(consultas.map(async q => {
+      const url = "https://suggestqueries.google.com/complete/search?client=firefox&hl=pt-BR&q=" + encodeURIComponent(q);
+      const r = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaSEO/1.0)", "Accept-Language": "pt-BR,pt;q=0.9" },
+        signal: AbortSignal.timeout(1800)
+      });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return (Array.isArray(data?.[1]) ? data[1] : []).map(x => String(x || "").trim()).filter(Boolean);
+    }));
+    google = respostas.flat();
+  } catch (e) {
+    console.warn("SEO Google Autocomplete indisponível; usando variações locais:", e.message);
+  }
+  const vistos = new Set();
+  const termos = [...google, ...locais, base].filter(Boolean).filter(termo => {
+    const chave = termo.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+    if (!chave || vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  }).slice(0, 18);
+  return {
+    termo_principal: base,
+    palavras_chave: termos,
+    fonte: google.length ? "Google Autocomplete + variações locais OpenSEO Lite" : "Variações locais OpenSEO Lite",
+    consulta_externa: google.length > 0
+  };
+}
+
 export async function gerarConteudo(p) {
+  const seo = await pesquisarPalavrasChaveSEO(p.nome || p.productName);
   const prompt=`Você é especialista em conteúdo para afiliados da Shopee Brasil. Crie um prompt curto e fiel para vídeo vertical 9:16 de 20 a 30 segundos, usando as imagens reais do anúncio como referência principal.
 
 O vídeo deve explicar visualmente o que é o produto, como é usado e quais características comprovadas merecem destaque. O produto deve ser o protagonista. Preserve exatamente modelo, cor, formato, marca, quantidade, embalagem e acessórios confirmados. Não invente materiais, funções, medidas, compatibilidades, resultados ou benefícios. Se faltarem detalhes, apresente visualmente o item sem afirmar o que não está confirmado. Não mencione preço, desconto, vendas, ranking ou popularidade. Não crie roteiro por segundos, storyboard ou falas; deixe a ferramenta de vídeo decidir a montagem. Use português brasileiro e linguagem natural.
@@ -285,6 +329,9 @@ Retorne SOMENTE JSON válido com este formato:
 {"video_prompt":"prompt de até 850 caracteres","nota":75,"motivo":"avaliação criativa curta","legenda":"legenda para publicar com até 150 caracteres, incluindo hashtags e CTA"}
 
 A nota mede adequação criativa, não prevê visualizações ou vendas. A legenda deve identificar o produto e usar somente informações comprovadas. Não ultrapasse os limites de caracteres.
+
+PALAVRAS-CHAVE SEO (OpenSEO Lite): ${JSON.stringify(seo)}.
+Use naturalmente a palavra-chave principal e 2 a 4 termos realmente relevantes na legenda e no prompt. Não force termos que não correspondam ao produto. Não afirme preço, desconto, promoção, material ou benefício que não esteja confirmado.
 
 Dados do produto: ${JSON.stringify({nome:p.nome,descricao:p.descricao,marca:p.marca,modelo:p.modelo,cor:p.cor,quantidade:p.quantidade,imagem:p.imagem,link_produto:p.link_produto})}`;
   const r=await iaJson(prompt);
@@ -501,6 +548,7 @@ export async function pesquisarEstrategia(p) {
   } catch (e) { console.warn("Memória Diretor IA indisponível:", e.message); }
 
   const fontes = await pesquisarWebProduto(nome, categoria);
+  const seo = await pesquisarPalavrasChaveSEO(nome);
   let historicoProduto = [];
   try {
     if (p.id) {
@@ -536,6 +584,8 @@ export async function pesquisarEstrategia(p) {
     "HISTÓRICO DO PRODUTO: " + historicoTexto,
     "MEMÓRIA DA CATEGORIA " + categoria + ": " + memoriaTexto,
     "FONTES E REFERÊNCIAS PÚBLICAS: " + JSON.stringify(fontes),
+    "PALAVRAS-CHAVE SEO (OpenSEO Lite): " + JSON.stringify(seo),
+    "Use a palavra-chave principal e 2 a 4 termos SEO relevantes de forma natural na legenda e na estratégia. Ignore sugestões que não descrevam exatamente o produto; não invente atributos nem alegações promocionais.",
     "ETAPA 1 — VERDADE E VALOR DO PRODUTO: separe fatos confirmados no anúncio, fatos visíveis na imagem, opiniões de compradores e lacunas. Use a descrição e as características do anúncio para identificar material/composição, textura, acabamento, caimento, construção, funcionalidades e diferenciais; a imagem sozinha não comprova composição, qualidade, durabilidade ou desempenho. Quando o anúncio informar o tecido/material, explique em linguagem simples por que essa informação importa, sem atribuir propriedades não comprovadas. Use avaliações apenas como percepção de compradores, indicando padrões recorrentes quando houver volume suficiente; nunca transforme opinião em garantia. Analise preço somente se houver preço atual confiável e referência comparável do mesmo produto ou de produtos realmente equivalentes. Só chame de barato, promoção, ótimo preço ou custo-benefício quando a comparação sustentar isso; sem comparação confiável, não faça afirmação de preço. Nunca invente desconto, escassez, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios. Alegações promocionais no título (como zero transparência, à prova d'água, antialérgico, compressão ou durabilidade) não são fatos verificados só por aparecerem no anúncio.",
     "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
     "ETAPA 3 — ROTEIRO OBRIGATÓRIO: a fala precisa dizer claramente o NOME DO PRODUTO (use uma versão curta, mas reconhecível, do nome exato do anúncio) e apresentar PELO MENOS DOIS benefícios ou características úteis, reais e confirmados nos dados do anúncio ou claramente visíveis. Não basta dizer apenas 'olha esse produto', 'confira este item' ou mostrar o produto sem identificá-lo. Estruture a fala em português brasileiro: nome do produto + dois benefícios/características confirmados + CTA. Exemplo de estrutura, não copie literalmente: 'Essa [nome do produto] tem [característica/benefício 1] e [característica/benefício 2]. Clique e confira!'. Se não houver dois benefícios comprováveis, cite duas características objetivas confirmadas, sem inventar vantagens. Comece com o produto visível nos primeiros 2 segundos, demonstre ao menos uma característica real em ação quando for possível e seguro. A fala deve soar espontânea, específica e caber naturalmente em 10 segundos; use um nome curto de 2 a 4 palavras, nunca leia o título completo do anúncio. Não simule depoimento ou experiência pessoal que não aconteceu.",

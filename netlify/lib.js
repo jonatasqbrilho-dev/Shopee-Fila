@@ -85,20 +85,31 @@ const modeloGroq = () => (pGroq ??= Promise.resolve(process.env.GROQ_MODEL || "o
 async function groq(prompt, options = {}) {
   try {
     const model = await modeloGroq();
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method:"POST",
-      headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"},
-      body:JSON.stringify({model,messages:[{role:"user",content:prompt}],max_completion_tokens:options.maxTokens || 1400,...(options.reasoningEffort?{reasoning_effort:options.reasoningEffort}:{}),response_format:{type:"json_object"}}),
-      signal:options.signal || AbortSignal.timeout(options.timeoutMs || 2500)
-    });
-    const j=await r.json();
-    if(!r.ok || !j.choices?.[0]?.message?.content) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,300));
-    if (j.choices[0].finish_reason === "length") throw new Error("Groq cortou a resposta por limite de tokens.");
-    return lerJson(j.choices[0].message.content);
+    const executar = async (usarFormatoJson, textoPrompt) => {
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method:"POST",
+        headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify({model,messages:[{role:"user",content:textoPrompt}],max_completion_tokens:options.maxTokens || 1400,...(options.reasoningEffort?{reasoning_effort:options.reasoningEffort}:{}),...(usarFormatoJson?{response_format:{type:"json_object"}}:{})}),
+        signal:options.signal || AbortSignal.timeout(options.timeoutMs || 2500)
+      });
+      const j=await r.json();
+      if(!r.ok || !j.choices?.[0]?.message?.content) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,500));
+      if (j.choices[0].finish_reason === "length") throw new Error("Groq cortou a resposta por limite de tokens.");
+      return lerJson(j.choices[0].message.content);
+    };
+    try {
+      return await executar(true, prompt);
+    } catch (e) {
+      // Alguns modelos Groq falham na validação do modo JSON estruturado.
+      // Tenta uma vez sem response_format, mantendo a exigência explícita de JSON no prompt.
+      if (!/json_validate_failed/i.test(String(e.message || e))) throw e;
+      console.warn("Groq: modo JSON estruturado falhou; tentando resposta JSON pelo prompt.");
+      return await executar(false, prompt + "\n\nIMPORTANTE: retorne somente um objeto JSON válido, sem Markdown, sem bloco de código e sem texto antes ou depois.");
+    }
   } catch(e){pGroq=undefined;throw e;}
 }
 // Usa um modelo Flash estável sem consultar a lista de modelos a cada execução.
-const modeloGemini = () => Promise.resolve(process.env.GEMINI_MODEL || "gemini-2.5-flash");
+const modeloGemini = () => Promise.resolve(process.env.GEMINI_MODEL && process.env.GEMINI_MODEL !== "gemini-2.5-flash" ? process.env.GEMINI_MODEL : "gemini-3.8-flash");
 // Modelo exclusivo do Diretor IA; mantém o provedor do fluxo legado inalterado.
 const modeloGeminiDiretor = () => Promise.resolve("gemini-3.8-flash");
 async function gemini(prompt, options = {}) {

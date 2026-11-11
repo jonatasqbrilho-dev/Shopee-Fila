@@ -288,23 +288,69 @@ const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,
 const removerMetricasVendas=texto=>String(texto||"").replace(/\b(?:\d+[.,]?\d*)\s*(?:mil|milhares|k)?\s*(?:unidades?|produtos?|vendas?|compradores?|clientes?)\b/gi,"").replace(/\b(?:mais vendido|mais vendidos|campe[aã]o de vendas|recorde de vendas|viral|sucesso de vendas|top vendas|ranking|ranking de vendas)\b/gi,"").replace(/\s{2,}/g," ").trim();
 
 
-// OpenSEO Lite integrado ao servidor: tenta sugestões públicas do Google e sempre
-// mantém variações locais gratuitas como fallback, sem depender do navegador/CORS.
-const SEO_VARIACOES = [
-  " como usar", " para que serve", " características", " modelo", " comprar",
-  " avaliação", " review", " vale a pena", " kit", " para casa",
-  " compacto", " portátil", " organizador", " Shopee"
+// OpenSEO Lite: combina sugestões públicas do Google com termos locais gratuitos
+// escolhidos pela categoria do produto. Não usa APIs pagas nem depende do navegador.
+const SEO_STOPWORDS = new Set(["a","o","as","os","de","da","do","das","dos","com","sem","para","por","na","no","nas","nos","e","em","um","uma","kit"]);
+const SEO_CATEGORIAS = [
+  { nome:"Moda e roupas", teste:/\b(calça|calca|pantalona|blusa|camisa|camiseta|vestido|saia|short|bermuda|legging|sutiã|sutia|calcinha|cueca|jaqueta|casaco|macacão|macacao|conjunto|roupa|moda|fitness|top feminino)\b/i,
+    termos:["como combinar","ideias de look","looks femininos","moda feminina","para o dia a dia","para trabalhar","estilo casual","tendências de moda"] },
+  { nome:"Calçados", teste:/\b(tênis|tenis|sapato|sandália|sandalia|chinelo|bota|sapatilha|scarpin|rasteira)\b/i,
+    termos:["como combinar","looks com","calçado feminino","calçado masculino","para o dia a dia","como escolher tamanho"] },
+  { nome:"Beleza e cuidados pessoais", teste:/\b(maquiagem|batom|base facial|rímel|rimel|perfume|hidratante|shampoo|condicionador|creme|sérum|serum|protetor solar|escova secadora|modelador|unha|cabelo|skincare)\b/i,
+    termos:["como usar","modo de aplicação","cuidados pessoais","rotina de beleza","dicas de beleza","para que serve"] },
+  { nome:"Eletrônicos e informática", teste:/\b(fone|headphone|bluetooth|celular|smartphone|carregador|cabo usb|teclado|mouse|monitor|notebook|tablet|caixa de som|smartwatch|relógio inteligente|câmera|camera|microfone|adaptador)\b/i,
+    termos:["como funciona","compatibilidade","como conectar","funções e recursos","para celular","avaliação do produto"] },
+  { nome:"Casa e organização", teste:/\b(organizador|prateleira|armário|armario|gaveteiro|cabide|cesto|caixa organizadora|decoração|decoracao|tapete|cortina|almofada|luminária|luminaria|lâmpada|lampada|vaso|móvel|movel)\b/i,
+    termos:["organização da casa","decoração de ambientes","como organizar","utilidades domésticas","para casa","dicas de organização"] },
+  { nome:"Cozinha e utilidades", teste:/\b(cozinha|panela|frigideira|air fryer|fritadeira|liquidificador|processador|garrafa|térmica|termica|pote|forma|assadeira|talher|utensílio|utensilio|cafeteira|marmita)\b/i,
+    termos:["utilidades para cozinha","como usar","preparo de alimentos","organização da cozinha","utensílios domésticos","facilita a rotina"] },
+  { nome:"Pet", teste:/\b(pet|cachorro|cão|cao|gato|coleira|brinquedo pet|cama pet|comedouro|bebedouro|ração|racao)\b/i,
+    termos:["acessórios para pets","cuidados com cães","cuidados com gatos","como escolher","rotina do pet","para cães e gatos"] },
+  { nome:"Bebê e infantil", teste:/\b(bebê|bebe|infantil|criança|crianca|mamadeira|fralda|carrinho|berço|berco|brinquedo infantil|lancheira)\b/i,
+    termos:["produtos infantis","rotina do bebê","uso infantil","como escolher","cuidados no dia a dia"] },
+  { nome:"Esporte e fitness", teste:/\b(academia|fitness|musculação|musculacao|halter|anilha|elástico de treino|colchonete|yoga|corrida|bicicleta ergométrica)\b/i,
+    termos:["acessórios para treino","treino em casa","atividade física","como usar","rotina fitness"] },
+  { nome:"Automotivo", teste:/\b(carro|automóvel|automovel|moto|motocicleta|capacete|retrovisor|pneu|tapete automotivo|suporte veicular|peça automotiva)\b/i,
+    termos:["acessórios automotivos","compatibilidade com veículo","instalação","como usar","cuidados com o veículo"] },
+  { nome:"Ferramentas e construção", teste:/\b(furadeira|parafusadeira|broca|chave de fenda|alicate|serra|ferramenta|torneira|chuveiro|material elétrico|construção)\b/i,
+    termos:["ferramentas para reparos","como instalar","como usar","manutenção","uso profissional e doméstico"] },
+  { nome:"Brinquedos e lazer", teste:/\b(brinquedo|boneca|carrinho infantil|quebra-cabeça|jogo de tabuleiro|pelúcia|pelucia|lego)\b/i,
+    termos:["brinquedos para crianças","ideias para brincar","presente infantil","como brincar","lazer em família"] },
+  { nome:"Papelaria e escritório", teste:/\b(caderno|caneta|lápis|lapis|mochila|estojo|papelaria|agenda|grampeador|impressora|escritório)\b/i,
+    termos:["material escolar","material de escritório","organização dos estudos","volta às aulas","itens de papelaria"] }
 ];
+const seoNormalizar = texto => String(texto || "").toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+function detectarCategoriaSEO(nomeProduto) {
+  const texto = seoNormalizar(nomeProduto);
+  return SEO_CATEGORIAS.find(c => c.teste.test(texto)) || { nome:"Produto geral", termos:["como usar","características","para que serve","comprar","avaliação","vale a pena"] };
+}
+function termosLocaisSEO(nomeProduto, categoria) {
+  const palavrasBase = String(nomeProduto || "").replace(/<[^>]*>/g, " ").replace(/[^\p{L}\p{N}\s-]/gu, " ").split(/\s+/).filter(Boolean);
+  const qualificadores = [];
+  const normalizado = seoNormalizar(nomeProduto);
+  for (const termo of ["cintura alta","com bolso","tecido duna","manga longa","sem fio","recarregável","à prova d'água","inox","bivolt","usb","bluetooth"]) {
+    if (normalizado.includes(seoNormalizar(termo))) qualificadores.push(termo);
+  }
+  const essenciais = palavrasBase.filter(p => !SEO_STOPWORDS.has(seoNormalizar(p)));
+  const curta = essenciais.slice(0, 4).join(" ");
+  return [
+    String(nomeProduto || "").trim().slice(0, 110),
+    curta,
+    ...qualificadores.map(q => curta + " " + q),
+    ...categoria.termos.map(t => curta ? curta + " " + t : t)
+  ].filter(Boolean);
+}
 async function pesquisarPalavrasChaveSEO(nomeProduto) {
   const base = String(nomeProduto || "produto").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 110);
-  const locais = SEO_VARIACOES.map(s => base + s);
+  const categoria = detectarCategoriaSEO(base);
+  const locais = termosLocaisSEO(base, categoria);
   const consultas = [base, base + " comprar", base + " como usar"];
   let google = [];
   try {
     const respostas = await Promise.all(consultas.map(async q => {
       const url = "https://suggestqueries.google.com/complete/search?client=firefox&hl=pt-BR&q=" + encodeURIComponent(q);
       const r = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaSEO/1.0)", "Accept-Language": "pt-BR,pt;q=0.9" },
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaSEO/2.0)", "Accept-Language": "pt-BR,pt;q=0.9" },
         signal: AbortSignal.timeout(1800)
       });
       if (!r.ok) return [];
@@ -313,20 +359,27 @@ async function pesquisarPalavrasChaveSEO(nomeProduto) {
     }));
     google = respostas.flat();
   } catch (e) {
-    console.warn("SEO Google Autocomplete indisponível; usando variações locais:", e.message);
+    console.warn("SEO Google Autocomplete indisponível; usando variações locais por categoria:", e.message);
   }
+  const palavrasRelevantes = new Set(seoNormalizar(base).split(" ").filter(p => p.length > 2 && !SEO_STOPWORDS.has(p)));
+  const googleRelevante = google.filter(termo => {
+    const tokens = seoNormalizar(termo).split(" ").filter(p => p.length > 2);
+    const correspondencias = tokens.filter(p => palavrasRelevantes.has(p)).length;
+    return correspondencias >= Math.min(2, palavrasRelevantes.size) || seoNormalizar(termo).includes(seoNormalizar(base.slice(0, 35)));
+  });
   const vistos = new Set();
-  const termos = [...google, ...locais, base].filter(Boolean).filter(termo => {
-    const chave = termo.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const termos = [...googleRelevante, ...locais].filter(Boolean).filter(termo => {
+    const chave = seoNormalizar(termo);
     if (!chave || vistos.has(chave)) return false;
     vistos.add(chave);
     return true;
-  }).slice(0, 18);
+  }).slice(0, 16);
   return {
     termo_principal: base,
+    categoria: categoria.nome,
     palavras_chave: termos,
-    fonte: google.length ? "Google Autocomplete + variações locais OpenSEO Lite" : "Variações locais OpenSEO Lite",
-    consulta_externa: google.length > 0
+    fonte: googleRelevante.length ? "Google Autocomplete filtrado + sugestões por categoria OpenSEO Lite" : "Sugestões locais por categoria OpenSEO Lite",
+    consulta_externa: googleRelevante.length > 0
   };
 }
 

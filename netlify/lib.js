@@ -85,37 +85,20 @@ const modeloGroq = () => (pGroq ??= Promise.resolve(process.env.GROQ_MODEL || "o
 async function groq(prompt, options = {}) {
   try {
     const model = await modeloGroq();
-    const executar = async (usarFormatoJson, textoPrompt) => {
-      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method:"POST",
-        headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"},
-        body:JSON.stringify({model,messages:[{role:"user",content:textoPrompt}],max_completion_tokens:options.maxTokens || 2400,...((options.reasoningEffort || (String(model).startsWith("openai/gpt-oss") ? "low" : undefined))?{reasoning_effort:options.reasoningEffort || "low"}:{}),...(usarFormatoJson?{response_format:{type:"json_object"}}:{})}),
-        signal:options.signal || AbortSignal.timeout(options.timeoutMs || 2500)
-      });
-      const j=await r.json();
-      const escolha=j.choices?.[0];
-      const conteudo=typeof escolha?.message?.content==="string"?escolha.message.content.trim():"";
-      if(!r.ok) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,500));
-      if(!conteudo) {
-        const motivo=escolha?.finish_reason || "sem motivo informado";
-        throw new Error("Groq HTTP "+r.status+": resposta sem conteúdo aproveitável (finish_reason="+motivo+"). O modelo pode ter consumido os tokens em raciocínio.");
-      }
-      if (escolha.finish_reason === "length") throw new Error("Groq cortou a resposta por limite de tokens.");
-      return lerJson(conteudo);
-    };
-    try {
-      return await executar(true, prompt);
-    } catch (e) {
-      // Alguns modelos Groq falham na validação do modo JSON estruturado.
-      // Tenta uma vez sem response_format, mantendo a exigência explícita de JSON no prompt.
-      if (!/json_validate_failed/i.test(String(e.message || e))) throw e;
-      console.warn("Groq: modo JSON estruturado falhou; tentando resposta JSON pelo prompt.");
-      return await executar(false, prompt + "\n\nIMPORTANTE: retorne somente um objeto JSON válido, sem Markdown, sem bloco de código e sem texto antes ou depois.");
-    }
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method:"POST",
+      headers:{Authorization:`Bearer ${process.env.GROQ_API_KEY}`,"Content-Type":"application/json"},
+      body:JSON.stringify({model,messages:[{role:"user",content:prompt}],max_completion_tokens:options.maxTokens || 1400,...(options.reasoningEffort?{reasoning_effort:options.reasoningEffort}:{}),response_format:{type:"json_object"}}),
+      signal:options.signal || AbortSignal.timeout(options.timeoutMs || 2500)
+    });
+    const j=await r.json();
+    if(!r.ok || !j.choices?.[0]?.message?.content) throw new Error("Groq HTTP "+r.status+": "+JSON.stringify(j).slice(0,300));
+    if (j.choices[0].finish_reason === "length") throw new Error("Groq cortou a resposta por limite de tokens.");
+    return lerJson(j.choices[0].message.content);
   } catch(e){pGroq=undefined;throw e;}
 }
 // Usa um modelo Flash estável sem consultar a lista de modelos a cada execução.
-const modeloGemini = () => Promise.resolve(process.env.GEMINI_MODEL && process.env.GEMINI_MODEL !== "gemini-2.5-flash" ? process.env.GEMINI_MODEL : "gemini-3.8-flash");
+const modeloGemini = () => Promise.resolve(process.env.GEMINI_MODEL || "gemini-2.5-flash");
 // Modelo exclusivo do Diretor IA; mantém o provedor do fluxo legado inalterado.
 const modeloGeminiDiretor = () => Promise.resolve("gemini-3.8-flash");
 async function gemini(prompt, options = {}) {
@@ -170,29 +153,10 @@ async function geminiDiretor(prompt, options = {}) {
 
 async function iaJson(prompt){
   const erros=[];
-  const controladores=[new AbortController(),new AbortController()];
-  // A geração comum roda em paralelo para não gastar o tempo limite em dois provedores sequenciais.
-  // 6 segundos por provedor e corte global em 6,5 s deixam margem para SEO e gravação no Netlify.
-  const limite=setTimeout(()=>controladores.forEach(c=>c.abort()),6500);
-  const provedores=[["Groq",groq],["Gemini",gemini]];
-  try{
-    const tarefas=provedores.map(async([nome,chamar],i)=>{
-      try{
-        return await chamar(prompt,{signal:controladores[i].signal,timeoutMs:6000});
-      }catch(e){
-        const detalhe=nome+": "+(e?.name==="AbortError"||e?.name==="TimeoutError"?"tempo limite excedido":e.message);
-        erros.push(detalhe);
-        console.error("IA:",detalhe);
-        throw e;
-      }
-    });
-    return await Promise.any(tarefas);
-  }catch(e){
-    throw new Error("Os serviços de IA não responderam. "+(erros.join(" | ")||"Os provedores não retornaram uma resposta válida."));
-  }finally{
-    clearTimeout(limite);
-    controladores.forEach(c=>{if(!c.signal.aborted)c.abort();});
+  for(const [nome,chamar] of [["Groq",groq],["Gemini",gemini]]){
+    try{return await chamar(prompt)}catch(e){erros.push(nome+": "+e.message);console.error("IA:",nome,e.message)}
   }
+  throw new Error("Os serviços de IA não responderam. "+erros.join(" | "));
 }
 
 // O Diretor IA produz uma estratégia extensa: usa os dois provedores em paralelo,
@@ -312,104 +276,7 @@ const limitarPrompt=texto=>{let s=String(texto||"");if(s.length<=850)return s;re
 const removerPreco=texto=>String(texto||"").replace(/R\$\s?\d+(?:[.,]\d{2})?/gi,"").replace(/\b\d+[.,]\d{2}\s?(?:reais)?\b/gi,"").replace(/\b(?:por|de|a partir de)\s+\d+(?:[.,]\d{2})?\s?(?:reais|R\$)?\b/gi,"").replace(/\s{2,}/g," ").trim();
 const removerMetricasVendas=texto=>String(texto||"").replace(/\b(?:\d+[.,]?\d*)\s*(?:mil|milhares|k)?\s*(?:unidades?|produtos?|vendas?|compradores?|clientes?)\b/gi,"").replace(/\b(?:mais vendido|mais vendidos|campe[aã]o de vendas|recorde de vendas|viral|sucesso de vendas|top vendas|ranking|ranking de vendas)\b/gi,"").replace(/\s{2,}/g," ").trim();
 
-
-// OpenSEO Lite: combina sugestões públicas do Google com termos locais gratuitos
-// escolhidos pela categoria do produto. Não usa APIs pagas nem depende do navegador.
-const SEO_STOPWORDS = new Set(["a","o","as","os","de","da","do","das","dos","com","sem","para","por","na","no","nas","nos","e","em","um","uma","kit"]);
-const SEO_CATEGORIAS = [
-  { nome:"Moda e roupas", teste:/\b(calça|calca|pantalona|blusa|camisa|camiseta|vestido|saia|short|bermuda|legging|sutiã|sutia|calcinha|cueca|jaqueta|casaco|macacão|macacao|conjunto|roupa|moda|fitness|top feminino)\b/i,
-    termos:["como combinar","ideias de look","looks femininos","moda feminina","para o dia a dia","para trabalhar","estilo casual","tendências de moda"] },
-  { nome:"Calçados", teste:/\b(tênis|tenis|sapato|sandália|sandalia|chinelo|bota|sapatilha|scarpin|rasteira)\b/i,
-    termos:["como combinar","looks com","calçado feminino","calçado masculino","para o dia a dia","como escolher tamanho"] },
-  { nome:"Beleza e cuidados pessoais", teste:/\b(maquiagem|batom|base facial|rímel|rimel|perfume|hidratante|shampoo|condicionador|creme|sérum|serum|protetor solar|escova secadora|modelador|unha|cabelo|skincare)\b/i,
-    termos:["como usar","modo de aplicação","cuidados pessoais","rotina de beleza","dicas de beleza","para que serve"] },
-  { nome:"Eletrônicos e informática", teste:/\b(fone|headphone|bluetooth|celular|smartphone|carregador|cabo usb|teclado|mouse|monitor|notebook|tablet|caixa de som|smartwatch|relógio inteligente|câmera|camera|microfone|adaptador)\b/i,
-    termos:["como funciona","compatibilidade","como conectar","funções e recursos","para celular","avaliação do produto"] },
-  { nome:"Casa e organização", teste:/\b(organizador|prateleira|armário|armario|gaveteiro|cabide|cesto|caixa organizadora|decoração|decoracao|tapete|cortina|almofada|luminária|luminaria|lâmpada|lampada|vaso|móvel|movel)\b/i,
-    termos:["organização da casa","decoração de ambientes","como organizar","utilidades domésticas","para casa","dicas de organização"] },
-  { nome:"Cozinha e utilidades", teste:/\b(cozinha|panela|frigideira|air fryer|fritadeira|liquidificador|processador|garrafa|térmica|termica|pote|forma|assadeira|talher|utensílio|utensilio|cafeteira|marmita)\b/i,
-    termos:["utilidades para cozinha","como usar","preparo de alimentos","organização da cozinha","utensílios domésticos","facilita a rotina"] },
-  { nome:"Pet", teste:/\b(pet|cachorro|cão|cao|gato|coleira|brinquedo pet|cama pet|comedouro|bebedouro|ração|racao)\b/i,
-    termos:["acessórios para pets","cuidados com cães","cuidados com gatos","como escolher","rotina do pet","para cães e gatos"] },
-  { nome:"Bebê e infantil", teste:/\b(bebê|bebe|infantil|criança|crianca|mamadeira|fralda|carrinho|berço|berco|brinquedo infantil|lancheira)\b/i,
-    termos:["produtos infantis","rotina do bebê","uso infantil","como escolher","cuidados no dia a dia"] },
-  { nome:"Esporte e fitness", teste:/\b(academia|fitness|musculação|musculacao|halter|anilha|elástico de treino|colchonete|yoga|corrida|bicicleta ergométrica)\b/i,
-    termos:["acessórios para treino","treino em casa","atividade física","como usar","rotina fitness"] },
-  { nome:"Automotivo", teste:/\b(carro|automóvel|automovel|moto|motocicleta|capacete|retrovisor|pneu|tapete automotivo|suporte veicular|peça automotiva)\b/i,
-    termos:["acessórios automotivos","compatibilidade com veículo","instalação","como usar","cuidados com o veículo"] },
-  { nome:"Ferramentas e construção", teste:/\b(furadeira|parafusadeira|broca|chave de fenda|alicate|serra|ferramenta|torneira|chuveiro|material elétrico|construção)\b/i,
-    termos:["ferramentas para reparos","como instalar","como usar","manutenção","uso profissional e doméstico"] },
-  { nome:"Brinquedos e lazer", teste:/\b(brinquedo|boneca|carrinho infantil|quebra-cabeça|jogo de tabuleiro|pelúcia|pelucia|lego)\b/i,
-    termos:["brinquedos para crianças","ideias para brincar","presente infantil","como brincar","lazer em família"] },
-  { nome:"Papelaria e escritório", teste:/\b(caderno|caneta|lápis|lapis|mochila|estojo|papelaria|agenda|grampeador|impressora|escritório)\b/i,
-    termos:["material escolar","material de escritório","organização dos estudos","volta às aulas","itens de papelaria"] }
-];
-const seoNormalizar = texto => String(texto || "").toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-function detectarCategoriaSEO(nomeProduto) {
-  const texto = seoNormalizar(nomeProduto);
-  return SEO_CATEGORIAS.find(c => c.teste.test(texto)) || { nome:"Produto geral", termos:["como usar","características","para que serve","comprar","avaliação","vale a pena"] };
-}
-function termosLocaisSEO(nomeProduto, categoria) {
-  const palavrasBase = String(nomeProduto || "").replace(/<[^>]*>/g, " ").replace(/[^\p{L}\p{N}\s-]/gu, " ").split(/\s+/).filter(Boolean);
-  const qualificadores = [];
-  const normalizado = seoNormalizar(nomeProduto);
-  for (const termo of ["cintura alta","com bolso","tecido duna","manga longa","sem fio","recarregável","à prova d'água","inox","bivolt","usb","bluetooth"]) {
-    if (normalizado.includes(seoNormalizar(termo))) qualificadores.push(termo);
-  }
-  const essenciais = palavrasBase.filter(p => !SEO_STOPWORDS.has(seoNormalizar(p)));
-  const curta = essenciais.slice(0, 4).join(" ");
-  return [
-    String(nomeProduto || "").trim().slice(0, 110),
-    curta,
-    ...qualificadores.map(q => curta + " " + q),
-    ...categoria.termos.map(t => curta ? curta + " " + t : t)
-  ].filter(Boolean);
-}
-async function pesquisarPalavrasChaveSEO(nomeProduto) {
-  const base = String(nomeProduto || "produto").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 110);
-  const categoria = detectarCategoriaSEO(base);
-  const locais = termosLocaisSEO(base, categoria);
-  const consultas = [base, base + " comprar", base + " como usar"];
-  let google = [];
-  try {
-    const respostas = await Promise.all(consultas.map(async q => {
-      const url = "https://suggestqueries.google.com/complete/search?client=firefox&hl=pt-BR&q=" + encodeURIComponent(q);
-      const r = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; ShopeeFilaSEO/2.0)", "Accept-Language": "pt-BR,pt;q=0.9" },
-        signal: AbortSignal.timeout(1800)
-      });
-      if (!r.ok) return [];
-      const data = await r.json();
-      return (Array.isArray(data?.[1]) ? data[1] : []).map(x => String(x || "").trim()).filter(Boolean);
-    }));
-    google = respostas.flat();
-  } catch (e) {
-    console.warn("SEO Google Autocomplete indisponível; usando variações locais por categoria:", e.message);
-  }
-  const palavrasRelevantes = new Set(seoNormalizar(base).split(" ").filter(p => p.length > 2 && !SEO_STOPWORDS.has(p)));
-  const googleRelevante = google.filter(termo => {
-    const tokens = seoNormalizar(termo).split(" ").filter(p => p.length > 2);
-    const correspondencias = tokens.filter(p => palavrasRelevantes.has(p)).length;
-    return correspondencias >= Math.min(2, palavrasRelevantes.size) || seoNormalizar(termo).includes(seoNormalizar(base.slice(0, 35)));
-  });
-  const vistos = new Set();
-  const termos = [...googleRelevante, ...locais].filter(Boolean).filter(termo => {
-    const chave = seoNormalizar(termo);
-    if (!chave || vistos.has(chave)) return false;
-    vistos.add(chave);
-    return true;
-  }).slice(0, 16);
-  return {
-    termo_principal: base,
-    categoria: categoria.nome,
-    palavras_chave: termos,
-    fonte: googleRelevante.length ? "Google Autocomplete filtrado + sugestões por categoria OpenSEO Lite" : "Sugestões locais por categoria OpenSEO Lite",
-    consulta_externa: googleRelevante.length > 0
-  };
-}
-
 export async function gerarConteudo(p) {
-  const seo = await pesquisarPalavrasChaveSEO(p.nome || p.productName);
   const prompt=`Você é especialista em conteúdo para afiliados da Shopee Brasil. Crie um prompt curto e fiel para vídeo vertical 9:16 de 20 a 30 segundos, usando as imagens reais do anúncio como referência principal.
 
 O vídeo deve explicar visualmente o que é o produto, como é usado e quais características comprovadas merecem destaque. O produto deve ser o protagonista. Preserve exatamente modelo, cor, formato, marca, quantidade, embalagem e acessórios confirmados. Não invente materiais, funções, medidas, compatibilidades, resultados ou benefícios. Se faltarem detalhes, apresente visualmente o item sem afirmar o que não está confirmado. Não mencione preço, desconto, vendas, ranking ou popularidade. Não crie roteiro por segundos, storyboard ou falas; deixe a ferramenta de vídeo decidir a montagem. Use português brasileiro e linguagem natural.
@@ -418,9 +285,6 @@ Retorne SOMENTE JSON válido com este formato:
 {"video_prompt":"prompt de até 850 caracteres","nota":75,"motivo":"avaliação criativa curta","legenda":"legenda para publicar com até 150 caracteres, incluindo hashtags e CTA"}
 
 A nota mede adequação criativa, não prevê visualizações ou vendas. A legenda deve identificar o produto e usar somente informações comprovadas. Não ultrapasse os limites de caracteres.
-
-PALAVRAS-CHAVE SEO (OpenSEO Lite): ${JSON.stringify(seo)}.
-Use naturalmente a palavra-chave principal e 2 a 4 termos realmente relevantes na legenda e no prompt. Não force termos que não correspondam ao produto. Não afirme preço, desconto, promoção, material ou benefício que não esteja confirmado.
 
 Dados do produto: ${JSON.stringify({nome:p.nome,descricao:p.descricao,marca:p.marca,modelo:p.modelo,cor:p.cor,quantidade:p.quantidade,imagem:p.imagem,link_produto:p.link_produto})}`;
   const r=await iaJson(prompt);
@@ -432,7 +296,7 @@ Dados do produto: ${JSON.stringify({nome:p.nome,descricao:p.descricao,marca:p.ma
   const motivo=String(r.motivo||"Adequação criativa estimada com base nos dados disponíveis do produto.").slice(0,500);
   const legenda=limitarLegenda(limparLegendaVendas(r.legenda));
   if(!legenda) throw new Error("A IA não retornou uma legenda válida. Tente novamente.");
-  return {video_prompt,nota,motivo,legenda,seo};
+  return {video_prompt,nota,motivo,legenda};
 }
 
 const KW=(process.env.KEYWORDS||"fone bluetooth,organizador de cozinha,luminária led,garrafa térmica,suporte de celular,mini processador").split(",").map(s=>s.trim());
@@ -637,7 +501,6 @@ export async function pesquisarEstrategia(p) {
   } catch (e) { console.warn("Memória Diretor IA indisponível:", e.message); }
 
   const fontes = await pesquisarWebProduto(nome, categoria);
-  const seo = await pesquisarPalavrasChaveSEO(nome);
   let historicoProduto = [];
   try {
     if (p.id) {
@@ -673,8 +536,6 @@ export async function pesquisarEstrategia(p) {
     "HISTÓRICO DO PRODUTO: " + historicoTexto,
     "MEMÓRIA DA CATEGORIA " + categoria + ": " + memoriaTexto,
     "FONTES E REFERÊNCIAS PÚBLICAS: " + JSON.stringify(fontes),
-    "PALAVRAS-CHAVE SEO (OpenSEO Lite): " + JSON.stringify(seo),
-    "Use a palavra-chave principal e 2 a 4 termos SEO relevantes de forma natural na legenda e na estratégia. Ignore sugestões que não descrevam exatamente o produto; não invente atributos nem alegações promocionais.",
     "ETAPA 1 — VERDADE E VALOR DO PRODUTO: separe fatos confirmados no anúncio, fatos visíveis na imagem, opiniões de compradores e lacunas. Use a descrição e as características do anúncio para identificar material/composição, textura, acabamento, caimento, construção, funcionalidades e diferenciais; a imagem sozinha não comprova composição, qualidade, durabilidade ou desempenho. Quando o anúncio informar o tecido/material, explique em linguagem simples por que essa informação importa, sem atribuir propriedades não comprovadas. Use avaliações apenas como percepção de compradores, indicando padrões recorrentes quando houver volume suficiente; nunca transforme opinião em garantia. Analise preço somente se houver preço atual confiável e referência comparável do mesmo produto ou de produtos realmente equivalentes. Só chame de barato, promoção, ótimo preço ou custo-benefício quando a comparação sustentar isso; sem comparação confiável, não faça afirmação de preço. Nunca invente desconto, escassez, material, medidas, funções, certificações, compatibilidade, capacidade, resultados ou acessórios. Alegações promocionais no título (como zero transparência, à prova d'água, antialérgico, compressão ou durabilidade) não são fatos verificados só por aparecerem no anúncio.",
     "ETAPA 2 — ESCOLHA DO ÂNGULO: avalie três ângulos diferentes entre demonstração prática, problema e solução, unboxing, curiosidade, comparação de características, organização/rotina, presente/ocasião, transformação de ambiente ou UGC conversacional. Escolha os três mais adequados ao produto. Dê notas de 0 a 10 para demonstrabilidade, clareza do benefício, novidade frente à memória e risco de afirmação não comprovada. Escolha um ângulo e explique por que venceu. Penalize repetir ângulos e ganchos recentes da categoria, principalmente os rejeitados.",
     "ETAPA 3 — ROTEIRO OBRIGATÓRIO: a fala precisa dizer claramente o NOME DO PRODUTO (use uma versão curta, mas reconhecível, do nome exato do anúncio) e apresentar PELO MENOS DOIS benefícios ou características úteis, reais e confirmados nos dados do anúncio ou claramente visíveis. Não basta dizer apenas 'olha esse produto', 'confira este item' ou mostrar o produto sem identificá-lo. Estruture a fala em português brasileiro: nome do produto + dois benefícios/características confirmados + CTA. Exemplo de estrutura, não copie literalmente: 'Essa [nome do produto] tem [característica/benefício 1] e [característica/benefício 2]. Clique e confira!'. Se não houver dois benefícios comprováveis, cite duas características objetivas confirmadas, sem inventar vantagens. Comece com o produto visível nos primeiros 2 segundos, demonstre ao menos uma característica real em ação quando for possível e seguro. A fala deve soar espontânea, específica e caber naturalmente em 10 segundos; use um nome curto de 2 a 4 palavras, nunca leia o título completo do anúncio. Não simule depoimento ou experiência pessoal que não aconteceu.",
